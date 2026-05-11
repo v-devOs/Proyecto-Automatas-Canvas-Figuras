@@ -18,6 +18,33 @@ from ast_nodes      import (
     ShowNode, HideNode, ClearNode,
 )
 
+# ── Colores ANSI para la consola ──────────────────────────────────────────────
+_R  = "\033[91m"   # rojo   — errores
+_Y  = "\033[93m"   # amarillo — puntero / advertencias
+_C  = "\033[96m"   # cian   — sugerencias
+_B  = "\033[1m"    # negrita
+_Z  = "\033[0m"    # reset
+
+
+def _puntero(col: int, col_fin: int = 0) -> str:
+    """Devuelve la cadena de espacios + carets para señalar la posición del error."""
+    n = max(1, (col_fin or col) - col + 1)
+    return " " * (col - 1) + "^" * n
+
+
+def _mostrar_error(fuente: str, e: object) -> None:
+    """Imprime un error con indicador visual del punto exacto y sugerencia."""
+    col     = getattr(e, "columna",    1)
+    col_fin = getattr(e, "col_fin",    col)
+    sug     = getattr(e, "sugerencia", "")
+    ptr     = _puntero(col, col_fin)
+    if col > 0 and fuente.strip():
+        print(f"  {fuente}")
+        print(f"  {_Y}{ptr}{_Z}")
+    print(f"  {_R}{_B}{e}{_Z}")
+    if sug:
+        print(f"  {_C}Sugerencia: {sug}{_Z}")
+
 
 class Executor:
     def __init__(self, tabla: TablaSimbolos) -> None:
@@ -104,34 +131,40 @@ def _repl(tabla, executor, canvas, root):
             root.after(0, root.destroy)
             break
         try:
-            tokens = tokenizar(linea)
-            ast    = Parser(tokens).parse()
-            AnalizadorSemantico(tabla).analizar(ast)
-            executor.ejecutar(ast)
-            toks_log = [t for t in tokens if t.tipo.value != "EOF"]
-            root.after(0, lambda l=linea, tl=toks_log, a=ast: (
-                canvas.actualizar(tabla),
-                canvas.set_status(f"OK  {l}", "ok"),
-                canvas.log_comando(l, tl, tabla),
-                canvas.mostrar_ast(l, a),
-            ))
-        except ErrorLexico as e:
-            print(f"  ERROR LEXICO:     {e}")
-            root.after(0, lambda m=str(e), l=linea: (
+            tokens, lex_errs = tokenizar(linea)
+            p   = Parser(tokens)
+            ast = p.parse()
+            _, sem_errs = AnalizadorSemantico(tabla).analizar(ast)
+
+            todos_errores = lex_errs + p.errores + sem_errs
+
+            if todos_errores:
+                print()
+                for err in todos_errores:
+                    _mostrar_error(linea, err)
+                primer = todos_errores[0]
+                nivel  = "warn" if isinstance(primer, ErrorSemantico) else "error"
+                msg    = str(primer)
+                root.after(0, lambda m=msg, l=linea, nv=nivel: (
+                    canvas.actualizar(tabla),
+                    canvas.set_status(m, nv),
+                    canvas.log_comando(l, [], tabla, error=m, nivel=nv),
+                ))
+            else:
+                executor.ejecutar(ast)
+                toks_log = [t for t in tokens if t.tipo.value != "EOF"]
+                root.after(0, lambda l=linea, tl=toks_log, a=ast: (
+                    canvas.actualizar(tabla),
+                    canvas.set_status(f"OK  {l}", "ok"),
+                    canvas.log_comando(l, tl, tabla),
+                    canvas.mostrar_ast(l, a),
+                ))
+        except Exception as e:
+            msg = f"ERROR INTERNO: {e}"
+            print(f"  {_R}{msg}{_Z}")
+            root.after(0, lambda m=msg, l=linea: (
                 canvas.set_status(m, "error"),
                 canvas.log_comando(l, [], tabla, error=m, nivel="error"),
-            ))
-        except ErrorSintactico as e:
-            print(f"  ERROR SINTACTICO: {e}")
-            root.after(0, lambda m=str(e), l=linea: (
-                canvas.set_status(m, "error"),
-                canvas.log_comando(l, [], tabla, error=m, nivel="error"),
-            ))
-        except ErrorSemantico as e:
-            print(f"  ERROR SEMANTICO:  {e}")
-            root.after(0, lambda m=str(e), l=linea: (
-                canvas.set_status(m, "warn"),
-                canvas.log_comando(l, [], tabla, error=m, nivel="warn"),
             ))
 
 

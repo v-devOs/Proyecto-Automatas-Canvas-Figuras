@@ -223,12 +223,17 @@ class ErrorLexico(Exception):
         L003  hexadecimal inválido
         L004  identificador inválido
     """
-    def __init__(self, codigo: str, mensaje: str, linea: int, columna: int) -> None:
+    def __init__(
+        self, codigo: str, mensaje: str, linea: int, columna: int,
+        sugerencia: str = "", col_fin: int = 0,
+    ) -> None:
         super().__init__(f"[{codigo}] Línea {linea}, Col {columna}: {mensaje}")
-        self.codigo  = codigo
-        self.mensaje = mensaje
-        self.linea   = linea
-        self.columna = columna
+        self.codigo     = codigo
+        self.mensaje    = mensaje
+        self.linea      = linea
+        self.columna    = columna
+        self.sugerencia = sugerencia
+        self.col_fin    = col_fin or columna
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -258,6 +263,7 @@ class Lexer:
         self._buf:    List[str] = []
         self._tok_lin = 1
         self._tok_col = 1
+        self.errores: List[ErrorLexico] = []
 
     # ── API pública ───────────────────────────────────────────────────────────
 
@@ -272,10 +278,13 @@ class Lexer:
             # ── 1. String literal: manejo especial ────────────────────────────
             if self._estado == Estado.QS:
                 if cc == CC.EOF_CC:
-                    raise ErrorLexico(
+                    self.errores.append(ErrorLexico(
                         "L002", "string sin cerrar",
                         self._tok_lin, self._tok_col,
-                    )
+                        sugerencia='Cierra el string con comillas dobles. Ej: "rojo"',
+                    ))
+                    tokens.append(Token(TipoToken.EOF, "", self._linea, self._col))
+                    break  # recuperación: salir del bucle
                 self._buf.append(c)       # type: ignore[arg-type]
                 self._avanzar()
                 if cc == CC.QUOTE:        # comilla de cierre → emitir
@@ -285,14 +294,18 @@ class Lexer:
 
             # ── 2. Delimitador en estado acumulador → emitir sin consumir ─────
             if cc in _DELIM and self._estado in _ESTADOS_EMIT:
-                tokens.append(self._emitir_acumulado())
+                tok = self._emitir_acumulado()
+                if tok is not None:
+                    tokens.append(tok)
                 self._reset()
                 continue                  # reprocesar el delimitador desde Q0
 
             # ── 3. EOF ─────────────────────────────────────────────────────────
             if cc == CC.EOF_CC:
                 if self._estado in _ESTADOS_EMIT:
-                    tokens.append(self._emitir_acumulado())
+                    tok = self._emitir_acumulado()
+                    if tok is not None:
+                        tokens.append(tok)
                 elif self._estado not in (Estado.Q0,):
                     self._error_eof()
                 tokens.append(Token(TipoToken.EOF, "", self._linea, self._col))
@@ -330,7 +343,7 @@ class Lexer:
 
     # ── Emisión de tokens ─────────────────────────────────────────────────────
 
-    def _emitir_acumulado(self) -> Token:
+    def _emitir_acumulado(self) -> Optional[Token]:
         """Selecciona tipo de token según el estado acumulador y emite."""
         lexema       = "".join(self._buf)
         lin, col     = self._tok_lin, self._tok_col
@@ -346,7 +359,7 @@ class Lexer:
 
         raise AssertionError(f"_emitir_acumulado: estado inesperado {self._estado}")
 
-    def _mk_palabra(self, lexema: str, lin: int, col: int) -> Token:
+    def _mk_palabra(self, lexema: str, lin: int, col: int) -> Optional[Token]:
         """
         Estado qPR / qTF del AFD formal.
         Consulta los conjuntos de clasificación final SOLO aquí.
@@ -355,9 +368,17 @@ class Lexer:
             return Token(TipoToken.PALABRA_RESERVADA, lexema, lin, col)
         if lexema in _TIPOS_FIGURA:
             return Token(TipoToken.TIPO_FIGURA, lexema, lin, col)
-        raise ErrorLexico("L001", f"palabra desconocida: {lexema!r}", lin, col)
+        self.errores.append(ErrorLexico(
+            "L001", f"palabra desconocida: {lexema!r}", lin, col,
+            sugerencia=(
+                "Palabras reservadas: create update delete show hide list clear screen help. "
+                "Tipos de figura: circle  square  triangle  line  pentagon"
+            ),
+            col_fin=col + len(lexema) - 1,
+        ))
+        return None
 
-    def _mk_identificador(self, lexema: str, lin: int, col: int) -> Token:
+    def _mk_identificador(self, lexema: str, lin: int, col: int) -> Optional[Token]:
         """
         Estado qIDF del AFD formal.
         Valida que el prefijo de letras sea un tipo de figura válido (L004).
@@ -365,11 +386,17 @@ class Lexer:
         split   = next(i for i, ch in enumerate(lexema) if ch.isdigit())
         prefijo = lexema[:split]
         if prefijo not in _TIPOS_FIGURA:
-            raise ErrorLexico(
+            self.errores.append(ErrorLexico(
                 "L004",
                 f"prefijo de identificador inválido: {prefijo!r}",
                 lin, col,
-            )
+                sugerencia=(
+                    "El prefijo debe ser un tipo de figura válido seguido de 4 dígitos. "
+                    "Ej: circle0001  square0042  triangle0003  line0010  pentagon0001"
+                ),
+                col_fin=col + len(prefijo) - 1,
+            ))
+            return None
         return Token(TipoToken.IDENTIFICADOR, lexema, lin, col)
 
     def _mk_string(self) -> Token:
@@ -381,18 +408,40 @@ class Lexer:
     def _error_transicion(self, c: Optional[str], cc: CC) -> None:
         lin, col = self._linea, self._col
         if self._estado in (Estado.QH, Estado.QH1):
-            raise ErrorLexico("L003", f"carácter hexadecimal inválido: {c!r}", lin, col)
-        if self._estado in (Estado.QID1, Estado.QID2, Estado.QID3, Estado.QID4):
-            raise ErrorLexico("L004", f"dígito esperado en identificador, se obtuvo {c!r}", lin, col)
-        raise ErrorLexico("L001", f"símbolo inválido: {c!r}", lin, col)
+            self.errores.append(ErrorLexico(
+                "L003", f"carácter hexadecimal inválido: {c!r}", lin, col,
+                sugerencia="El color hexadecimal solo acepta dígitos 0-9 y letras A-F. Ej: #FF00AB",
+            ))
+        elif self._estado in (Estado.QID1, Estado.QID2, Estado.QID3, Estado.QID4):
+            self.errores.append(ErrorLexico(
+                "L004", f"dígito esperado en identificador, se obtuvo {c!r}", lin, col,
+                sugerencia="El identificador necesita exactamente 4 dígitos numéricos. Ej: circle0001",
+            ))
+        else:
+            self.errores.append(ErrorLexico(
+                "L001", f"símbolo inválido: {c!r}", lin, col,
+                sugerencia='Caracteres válidos: letras, dígitos, #, ", (, ), [, ], coma, _',
+            ))
+        # Recuperación: descartar el carácter problemático y volver a Q0
+        self._avanzar()
+        self._reset()
 
     def _error_eof(self) -> None:
         lin, col = self._linea, self._col
         if self._estado in (Estado.QID1, Estado.QID2, Estado.QID3):
-            raise ErrorLexico("L004", "identificador incompleto: faltan dígitos", lin, col)
-        if self._estado == Estado.QH:
-            raise ErrorLexico("L003", "'#' sin dígitos hexadecimales", lin, col)
-        raise ErrorLexico("L001", "fin de entrada inesperado", lin, col)
+            self.errores.append(ErrorLexico(
+                "L004", "identificador incompleto: faltan dígitos", lin, col,
+                sugerencia="El identificador necesita exactamente 4 dígitos. Ej: circle0001",
+            ))
+        elif self._estado == Estado.QH:
+            self.errores.append(ErrorLexico(
+                "L003", "'#' sin dígitos hexadecimales", lin, col,
+                sugerencia="Especifica al menos un dígito hexadecimal tras #. Ej: #FF o #1A2B3C",
+            ))
+        else:
+            self.errores.append(ErrorLexico(
+                "L001", "fin de entrada inesperado", lin, col,
+            ))
 
     # ── Utilidades ────────────────────────────────────────────────────────────
 
@@ -417,9 +466,11 @@ class Lexer:
 # 8 · FUNCIÓN DE CONVENIENCIA
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def tokenizar(texto: str) -> List[Token]:
-    """Atajo: crea un Lexer, lo ejecuta y devuelve la lista de tokens."""
-    return Lexer(texto).tokenizar()
+def tokenizar(texto: str) -> Tuple[List[Token], List[ErrorLexico]]:
+    """Ejecuta el AFD; devuelve (tokens, errores_léxicos)."""
+    lx = Lexer(texto)
+    tokens = lx.tokenizar()
+    return tokens, lx.errores
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

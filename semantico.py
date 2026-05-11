@@ -50,10 +50,15 @@ class ErrorSemantico(Exception):
         M004  escala inválida  (≤ 0)
         M005  figura eliminada
     """
-    def __init__(self, codigo: str, mensaje: str) -> None:
+    def __init__(self, codigo: str, mensaje: str, sugerencia: str = "") -> None:
         super().__init__(f"[{codigo}] {mensaje}")
-        self.codigo  = codigo
-        self.mensaje = mensaje
+        self.codigo     = codigo
+        self.mensaje    = mensaje
+        self.sugerencia = sugerencia
+        # Sin posición léxica (el AST no conserva columnas)
+        self.linea   = 0
+        self.columna = 0
+        self.col_fin = 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -80,7 +85,8 @@ class AnalizadorSemantico:
     # Se construye en __init__ para referenciar self.
 
     def __init__(self, tabla: TablaSimbolos) -> None:
-        self._tabla = tabla
+        self._tabla  = tabla
+        self.errores: List[ErrorSemantico] = []
         self._dispatch = {
             CreateNode: self._check_create,
             UpdateNode: self._check_update,
@@ -94,14 +100,17 @@ class AnalizadorSemantico:
 
     # ── API pública ───────────────────────────────────────────────────────────
 
-    def analizar(self, programa: ProgramaNode) -> TablaSimbolos:
-        """Procesa cada comando del AST; actualiza y devuelve la tabla."""
+    def analizar(self, programa: ProgramaNode) -> Tuple[TablaSimbolos, List[ErrorSemantico]]:
+        """Procesa cada comando del AST; recopila errores y devuelve (tabla, errores)."""
         for nodo in programa.comandos:
             fn = self._dispatch.get(type(nodo))
             if fn is None:
                 raise AssertionError(f"Nodo no manejado: {type(nodo)}")
-            fn(nodo)
-        return self._tabla
+            try:
+                fn(nodo)
+            except ErrorSemantico as e:
+                self.errores.append(e)
+        return self._tabla, self.errores
 
     # ── create ────────────────────────────────────────────────────────────────
 
@@ -117,6 +126,7 @@ class AnalizadorSemantico:
             raise ErrorSemantico(
                 "M002",
                 f"identificador duplicado: {nuevo_id!r}",
+                sugerencia=f"El ID {nuevo_id!r} ya existe; usa 'update {nuevo_id}(...)' para modificarlo",
             )
 
         # Resolver parámetros (con valores por defecto si no se proporcionaron)
@@ -199,15 +209,24 @@ class AnalizadorSemantico:
         """M001 si no existe; M005 si está eliminada."""
         entrada = self._tabla.obtener(id)
         if entrada is None:
-            raise ErrorSemantico("M001", f"figura inexistente: {id!r}")
+            raise ErrorSemantico(
+                "M001", f"figura inexistente: {id!r}",
+                sugerencia="Usa 'list' para ver los identificadores de figuras activas",
+            )
         if entrada.eliminada:
-            raise ErrorSemantico("M005", f"figura eliminada: {id!r}")
+            raise ErrorSemantico(
+                "M005", f"figura eliminada: {id!r}",
+                sugerencia="La figura fue eliminada; crea una nueva con 'create'",
+            )
         return entrada
 
     def _validar_escala(self, escala: int) -> None:
         """M004 si escala ≤ 0."""
         if escala <= 0:
-            raise ErrorSemantico("M004", f"escala inválida: {escala} (debe ser > 0)")
+            raise ErrorSemantico(
+                "M004", f"escala inválida: {escala} (debe ser > 0)",
+                sugerencia='La escala debe ser un entero positivo. Ej: create circle("rojo", 2, [0,0])',
+            )
 
     def _validar_slot(self, valor: ValorUpdateNode, esperado: str, slot: int) -> None:
         """
@@ -221,6 +240,10 @@ class AnalizadorSemantico:
                 "M003",
                 f"slot {slot} espera {esperado!r}, "
                 f"se obtuvo {valor.tipo!r} = {valor.valor!r}",
+                sugerencia=(
+                    "Los parámetros de update van en orden: (color, escala, posicion). "
+                    'Usa _ para mantener el valor actual. Ej: update circle0001("rojo", _, _)'
+                ),
             )
 
     # ── Resolución de valores con wildcard ────────────────────────────────────
@@ -252,8 +275,8 @@ class AnalizadorSemantico:
 # FUNCIÓN DE CONVENIENCIA
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def analizar(programa: ProgramaNode, tabla: TablaSimbolos) -> TablaSimbolos:
-    """Analiza semánticamente el AST sobre la tabla dada y la devuelve."""
+def analizar(programa: ProgramaNode, tabla: TablaSimbolos) -> Tuple[TablaSimbolos, List[ErrorSemantico]]:
+    """Analiza semánticamente el AST sobre la tabla dada; devuelve (tabla, errores)."""
     return AnalizadorSemantico(tabla).analizar(programa)
 
 
@@ -267,8 +290,13 @@ if __name__ == "__main__":
     from parser import ErrorSintactico, parsear
 
     def ejecutar(texto: str, tabla: TablaSimbolos) -> None:
-        ast = parsear(texto)
-        analizar(ast, tabla)
+        ast, lex_errs, syn_errs = parsear(texto)
+        errores = lex_errs + syn_errs
+        if errores:
+            raise errores[0]
+        _, sem_errs = analizar(ast, tabla)
+        if sem_errs:
+            raise sem_errs[0]
 
     CASOS: List[Tuple[str, str]] = [
         # ── Válidos (flujo completo) ──────────────────────────────────────────

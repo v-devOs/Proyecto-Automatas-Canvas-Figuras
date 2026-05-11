@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, Tuple
 
-from lexer import Lexer, Token, TipoToken, tokenizar
+from lexer import ErrorLexico, Lexer, Token, TipoToken, tokenizar
 from ast_nodes import (
     ProgramaNode, ComandoNode,
     CreateNode, UpdateNode, DeleteNode,
@@ -52,12 +52,37 @@ class ErrorSintactico(Exception):
         S002  estructura inválida
         S003  token inesperado
     """
-    def __init__(self, codigo: str, mensaje: str, linea: int, columna: int) -> None:
+    def __init__(
+        self, codigo: str, mensaje: str, linea: int, columna: int,
+        sugerencia: str = "",
+    ) -> None:
         super().__init__(f"[{codigo}] Línea {linea}, Col {columna}: {mensaje}")
-        self.codigo  = codigo
-        self.mensaje = mensaje
-        self.linea   = linea
-        self.columna = columna
+        self.codigo     = codigo
+        self.mensaje    = mensaje
+        self.linea      = linea
+        self.columna    = columna
+        self.sugerencia = sugerencia
+        self.col_fin    = columna  # posición del token (un solo token de ancho)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SUGERENCIAS CONTEXTUALES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_SUGERENCIAS_TIPO: Dict[TipoToken, str] = {
+    TipoToken.TIPO_FIGURA:   "Tipos de figura válidos: circle  square  triangle  line  pentagon",
+    TipoToken.IDENTIFICADOR: "Los identificadores tienen la forma tipo+4dígitos. Ej: circle0001",
+    TipoToken.LPAREN:        "Se esperaba '(' para abrir los parámetros. Ej: create circle(\"rojo\", 2, [0,0])",
+    TipoToken.RPAREN:        "Se esperaba ')' para cerrar los parámetros",
+    TipoToken.LBRACKET:      "Se esperaba '[' para abrir la posición. Ej: [10, 20]",
+    TipoToken.RBRACKET:      "Se esperaba ']' para cerrar la posición",
+    TipoToken.COMMA:         "Se esperaba ',' como separador. Ej: create circle(\"rojo\", 2, [0,0])",
+    TipoToken.NUM_DEC:       "Se esperaba un número entero positivo para la escala. Ej: 2",
+}
+
+_SUGERENCIA_COMANDOS = (
+    "Comandos válidos: create  update  delete  show  hide  list  clear screen  help"
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -79,7 +104,7 @@ class Parser:
     def __init__(self, tokens: List[Token]) -> None:
         self._tokens = tokens
         self._pos    = 0
-
+        self.errores: List[ErrorSintactico] = []
         # ── Tabla de despacho de comandos (lookahead LL(1)) ───────────────────
         self._DISPATCH = {
             "create": self._parse_create,
@@ -110,6 +135,7 @@ class Parser:
                 f"se esperaba {tipo.value}, "
                 f"se obtuvo {tok.tipo.value} ({tok.lexema!r})",
                 tok.linea, tok.columna,
+                sugerencia=_SUGERENCIAS_TIPO.get(tipo, ""),
             )
         self._pos += 1
         return tok
@@ -123,18 +149,32 @@ class Parser:
                 f"se esperaba {lexema!r}, "
                 f"se obtuvo {tok.tipo.value} ({tok.lexema!r})",
                 tok.linea, tok.columna,
+                sugerencia=_SUGERENCIAS_TIPO.get(tipo, ""),
             )
         self._pos += 1
         return tok
 
     # ── API pública ───────────────────────────────────────────────────────────
 
+    def _sincronizar(self) -> None:
+        """Avanza hasta el inicio del siguiente comando o EOF (recuperación de pánico)."""
+        while self._lookahead() != TipoToken.EOF:
+            tok = self._actual
+            if tok.tipo == TipoToken.PALABRA_RESERVADA and tok.lexema in self._DISPATCH:
+                break
+            self._pos += 1
+
     def parse(self) -> ProgramaNode:
-        """<programa> ::= { <comando> }"""
+        """<programa> ::= { <comando> }  — con recuperación de errores."""
         nodo = ProgramaNode()
         while self._lookahead() != TipoToken.EOF:
-            nodo.comandos.append(self._parse_comando())
-        self.match(TipoToken.EOF)
+            try:
+                nodo.comandos.append(self._parse_comando())
+            except ErrorSintactico as e:
+                self.errores.append(e)
+                self._sincronizar()
+        if self._lookahead() == TipoToken.EOF:
+            self._pos += 1
         return nodo
 
     # ── No-terminal: <comando> ────────────────────────────────────────────────
@@ -154,6 +194,7 @@ class Parser:
                 f"se esperaba un comando, "
                 f"se obtuvo {tok.tipo.value} ({tok.lexema!r})",
                 tok.linea, tok.columna,
+                sugerencia=_SUGERENCIA_COMANDOS,
             )
         fn = self._DISPATCH.get(tok.lexema)
         if fn is None:
@@ -161,6 +202,7 @@ class Parser:
                 "S001",
                 f"comando desconocido: {tok.lexema!r}",
                 tok.linea, tok.columna,
+                sugerencia=_SUGERENCIA_COMANDOS,
             )
         return fn()
 
@@ -270,6 +312,7 @@ class Parser:
             f"se esperaba color (STRING o NUM_HEX), "
             f"se obtuvo {tok.tipo.value} ({tok.lexema!r})",
             tok.linea, tok.columna,
+            sugerencia='El color puede ser un string "rojo" o un hexadecimal #FF0088',
         )
 
     def _parse_escala(self) -> int:
@@ -321,6 +364,7 @@ class Parser:
             f"se esperaba valor_update (color / escala / posicion / _), "
             f"se obtuvo {tok.tipo.value} ({tok.lexema!r})",
             tok.linea, tok.columna,
+            sugerencia='Usa _ para mantener el valor actual. Ej: update circle0001("rojo", _, _)',
         )
 
 
@@ -328,10 +372,12 @@ class Parser:
 # FUNCIÓN DE CONVENIENCIA
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def parsear(texto: str) -> ProgramaNode:
-    """Tokeniza el texto y lo parsea, devolviendo el AST."""
-    tokens = tokenizar(texto)
-    return Parser(tokens).parse()
+def parsear(texto: str) -> Tuple[ProgramaNode, List[ErrorLexico], List[ErrorSintactico]]:
+    """Tokeniza y parsea el texto; devuelve (AST, errores_léxicos, errores_sintácticos)."""
+    tokens, lex_errs = tokenizar(texto)
+    p = Parser(tokens)
+    ast = p.parse()
+    return ast, lex_errs, p.errores
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
