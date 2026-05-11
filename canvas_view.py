@@ -121,21 +121,7 @@ class CanvasView:
         style.configure("TPane.TFrame", background=STATUS_BG)
 
         # ══ Packing del fondo hacia arriba para que expand sea correcto ═════════
-        # 1. Barra de estado — ancla al fondo absoluto
-        bar = tk.Frame(root, bg="#11111b", height=24)
-        bar.pack(side=tk.BOTTOM, fill=tk.X)
-
-        self._status_var = tk.StringVar(value="  listo.")
-        self._status_lbl = tk.Label(
-            bar,
-            textvariable=self._status_var,
-            bg="#11111b", fg=STATUS_OK,
-            font=("Consolas", 9),
-            anchor="w", padx=8,
-        )
-        self._status_lbl.pack(fill=tk.X)
-
-        # 2. Consola integrada — encima de la barra de estado
+        # 1. Consola integrada — ancla al fondo absoluto
         con_frame = tk.Frame(root, bg="#11111b")
         con_frame.pack(side=tk.BOTTOM, fill=tk.X)
         self._build_console(con_frame)
@@ -433,8 +419,6 @@ class CanvasView:
         w.delete("1.0", tk.END)
         w.configure(state=tk.DISABLED)
         self._ast_render(ast, depth=0, prefix="", is_last=True)
-        # Cambiar automáticamente a la pestaña AST
-        self._nb.select(2)
 
     def _ast_render(self, nodo: object, depth: int, prefix: str, is_last: bool) -> None:
         """Renderiza recursivamente el nodo AST con líneas de árbol Unicode."""

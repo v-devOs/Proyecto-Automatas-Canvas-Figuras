@@ -151,13 +151,11 @@ def _proceso_comando(
             primer = todos[0]
             nivel  = "warn" if isinstance(primer, ErrorSemantico) else "error"
             canvas_v.actualizar(tabla)
-            canvas_v.set_status(str(primer), nivel)
             canvas_v.log_comando(linea, [], tabla, error=str(primer), nivel=nivel)
         else:
             executor.ejecutar(ast)
             toks_log = [t for t in tokens if t.tipo.value != "EOF"]
             canvas_v.actualizar(tabla)
-            canvas_v.set_status(f"OK  {linea}", "ok")
             canvas_v.log_comando(linea, toks_log, tabla)
             canvas_v.mostrar_ast(linea, ast)
 
