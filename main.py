@@ -1,10 +1,8 @@
 """
-main.py - Interprete interactivo, Lenguaje de Figuras Geometricas
-Consola nativa Python (threading) + canvas tkinter (hilo principal).
+main.py - Intérprete interactivo, Lenguaje de Figuras Geométricas.
+Consola integrada en tkinter — hilo único, sin threading.
 """
 from __future__ import annotations
-import sys
-import threading
 import tkinter as tk
 
 from lexer          import ErrorLexico,     tokenizar
@@ -18,37 +16,15 @@ from ast_nodes      import (
     ShowNode, HideNode, ClearNode,
 )
 
-# ── Colores ANSI para la consola ──────────────────────────────────────────────
-_R  = "\033[91m"   # rojo   — errores
-_Y  = "\033[93m"   # amarillo — puntero / advertencias
-_C  = "\033[96m"   # cian   — sugerencias
-_B  = "\033[1m"    # negrita
-_Z  = "\033[0m"    # reset
 
-
-def _puntero(col: int, col_fin: int = 0) -> str:
-    """Devuelve la cadena de espacios + carets para señalar la posición del error."""
-    n = max(1, (col_fin or col) - col + 1)
-    return " " * (col - 1) + "^" * n
-
-
-def _mostrar_error(fuente: str, e: object) -> None:
-    """Imprime un error con indicador visual del punto exacto y sugerencia."""
-    col     = getattr(e, "columna",    1)
-    col_fin = getattr(e, "col_fin",    col)
-    sug     = getattr(e, "sugerencia", "")
-    ptr     = _puntero(col, col_fin)
-    if col > 0 and fuente.strip():
-        print(f"  {fuente}")
-        print(f"  {_Y}{ptr}{_Z}")
-    print(f"  {_R}{_B}{e}{_Z}")
-    if sug:
-        print(f"  {_C}Sugerencia: {sug}{_Z}")
-
+# ══════════════════════════════════════════════════════════════════════════════
+# EXECUTOR  —  toda la salida va a canvas_v.write_console()
+# ══════════════════════════════════════════════════════════════════════════════
 
 class Executor:
-    def __init__(self, tabla: TablaSimbolos) -> None:
+    def __init__(self, tabla: TablaSimbolos, write_fn=None) -> None:
         self._tabla = tabla
+        self._write = write_fn or (lambda text, tag="": None)
         self._dispatch = {
             CreateNode: self._exec_create,
             UpdateNode: self._exec_update,
@@ -71,107 +47,141 @@ class Executor:
         figs = [e for e in self._tabla.listar() if e.tipo == tipo and not e.eliminada]
         if figs:
             e = figs[-1]
-            print(f"  OK: {e.id}  (color={e.color}, escala={e.escala}, pos={list(e.posicion)})")
+            self._write(f"  OK: {e.id}  (color={e.color}, escala={e.escala}, pos={list(e.posicion)})", "ok")
 
     def _exec_update(self, nodo: UpdateNode) -> None:
         e = self._tabla.obtener(nodo.id)
         if e:
-            print(f"  OK: {e.id}  (color={e.color}, escala={e.escala}, pos={list(e.posicion)})")
+            self._write(f"  OK: {e.id}  (color={e.color}, escala={e.escala}, pos={list(e.posicion)})", "ok")
 
     def _exec_delete(self, nodo: DeleteNode) -> None:
-        print(f"  OK: {nodo.id} eliminado")
+        self._write(f"  OK: {nodo.id} eliminado", "ok")
 
     def _exec_show(self, nodo: ShowNode) -> None:
-        print(f"  OK: {nodo.id} visible")
+        self._write(f"  OK: {nodo.id} visible", "ok")
 
     def _exec_hide(self, nodo: HideNode) -> None:
-        print(f"  OK: {nodo.id} oculto")
+        self._write(f"  OK: {nodo.id} oculto", "ok")
 
     def _exec_list(self, _) -> None:
         figs = [e for e in self._tabla.listar() if not e.eliminada]
         if not figs:
-            print("  (no hay figuras activas)")
+            self._write("  (no hay figuras activas)", "info")
             return
-        print(f"  {'ID':<16} {'TIPO':<10} {'COLOR':<10} {'ESC':<4} {'POS':<12} VIS")
+        self._write(f"  {'ID':<16} {'TIPO':<10} {'COLOR':<10} {'ESC':<4} {'POS':<12} VIS", "info")
         for e in figs:
-            print(f"  {e.id:<16} {e.tipo:<10} {e.color:<10} {e.escala:<4} {str(list(e.posicion)):<12} {'si' if e.visible else 'no'}")
+            self._write(
+                f"  {e.id:<16} {e.tipo:<10} {e.color:<10} {e.escala:<4} "
+                f"{str(list(e.posicion)):<12} {'si' if e.visible else 'no'}",
+                "ok" if e.visible else "warn",
+            )
 
     def _exec_clear(self, _) -> None:
-        print("  OK: tabla vaciada")
+        self._write("  OK: tabla vaciada", "ok")
 
     def _exec_help(self, _) -> None:
-        print("""
-  Comandos:
-    create <tipo>                     crea figura
-    create <tipo>(color,escala,[x,y]) crea con parametros
-    update <id>(_|color,_|esc,_|pos)  actualiza campos
-    delete <id>    elimina       show <id>  visible
-    hide   <id>    oculta        list       listar todas
-    clear screen   vaciar        help       esta ayuda
-    exit / quit    salir
-  Tipos: circle  square  triangle  line  pentagon
-""")
+        for ln in [
+            "  Comandos disponibles:",
+            "    create <tipo>                      crea figura con valores por defecto",
+            "    create <tipo>(color,escala,[x,y])  crea con parámetros",
+            "    update <id>(_|color,_|esc,_|pos)   modifica uno o más campos",
+            "    delete <id>    elimina figura",
+            "    show   <id>    hace visible         hide <id>    oculta",
+            "    list           lista figuras         clear screen  vacía",
+            "    help           esta ayuda            exit / quit   salir",
+            "  Tipos: circle  square  triangle  line  pentagon",
+        ]:
+            self._write(ln, "info")
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DISPLAY DE ERRORES EN LA CONSOLA TKINTER
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _write_error(canvas_v: CanvasView, fuente: str, e: object) -> None:
+    """Escribe un error con puntero visual y sugerencia en la consola integrada."""
+    col     = getattr(e, "columna",    1)
+    col_fin = getattr(e, "col_fin",    col)
+    sug     = getattr(e, "sugerencia", "")
+
+    if col > 0 and fuente.strip():
+        n   = max(1, (col_fin or col) - col + 1)
+        ptr = " " * (col - 1) + "^" * n
+        canvas_v.write_console(f"  {fuente}", "info")
+        canvas_v.write_console(f"  {ptr}", "ptr")
+
+    nivel = "warn" if isinstance(e, ErrorSemantico) else "error"
+    canvas_v.write_console(f"  {e}", nivel)
+    if sug:
+        canvas_v.write_console(f"  Sugerencia: {sug}", "sug")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PROCESADOR DE COMANDOS  (reemplaza el antiguo REPL en hilo separado)
+# ══════════════════════════════════════════════════════════════════════════════
 
 _SALIR = {"exit", "quit"}
 
-def _repl(tabla, executor, canvas, root):
-    print("\n  Interprete de Figuras Geometricas")
-    print("  Escribe  help  para ver los comandos.  exit  para salir.\n")
-    while True:
-        try:
-            linea = input(">>> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            root.after(0, root.destroy)
-            break
-        if not linea:
-            continue
-        if linea.lower() in _SALIR:
-            print("  hasta luego.")
-            root.after(0, root.destroy)
-            break
-        try:
-            tokens, lex_errs = tokenizar(linea)
-            p   = Parser(tokens)
-            ast = p.parse()
-            _, sem_errs = AnalizadorSemantico(tabla).analizar(ast)
 
-            todos_errores = lex_errs + p.errores + sem_errs
+def _proceso_comando(
+    linea: str,
+    tabla: TablaSimbolos,
+    executor: Executor,
+    canvas_v: CanvasView,
+) -> None:
+    """Corre en el hilo principal de tkinter; llama a lexer→parser→semántico→executor."""
+    if linea.lower() in _SALIR:
+        canvas_v.write_console("  hasta luego.", "info")
+        canvas_v._root.after(300, canvas_v._root.destroy)
+        return
 
-            if todos_errores:
-                print()
-                for err in todos_errores:
-                    _mostrar_error(linea, err)
-                primer = todos_errores[0]
-                nivel  = "warn" if isinstance(primer, ErrorSemantico) else "error"
-                msg    = str(primer)
-                root.after(0, lambda m=msg, l=linea, nv=nivel: (
-                    canvas.actualizar(tabla),
-                    canvas.set_status(m, nv),
-                    canvas.log_comando(l, [], tabla, error=m, nivel=nv),
-                ))
-            else:
-                executor.ejecutar(ast)
-                toks_log = [t for t in tokens if t.tipo.value != "EOF"]
-                root.after(0, lambda l=linea, tl=toks_log, a=ast: (
-                    canvas.actualizar(tabla),
-                    canvas.set_status(f"OK  {l}", "ok"),
-                    canvas.log_comando(l, tl, tabla),
-                    canvas.mostrar_ast(l, a),
-                ))
-        except Exception as e:
-            msg = f"ERROR INTERNO: {e}"
-            print(f"  {_R}{msg}{_Z}")
-            root.after(0, lambda m=msg, l=linea: (
-                canvas.set_status(m, "error"),
-                canvas.log_comando(l, [], tabla, error=m, nivel="error"),
-            ))
+    canvas_v.write_console(f"> {linea}", "cmd")
 
+    try:
+        tokens, lex_errs = tokenizar(linea)
+        p   = Parser(tokens)
+        ast = p.parse()
+        _, sem_errs = AnalizadorSemantico(tabla).analizar(ast)
+
+        todos = lex_errs + p.errores + sem_errs
+
+        if todos:
+            for err in todos:
+                _write_error(canvas_v, linea, err)
+            primer = todos[0]
+            nivel  = "warn" if isinstance(primer, ErrorSemantico) else "error"
+            canvas_v.actualizar(tabla)
+            canvas_v.set_status(str(primer), nivel)
+            canvas_v.log_comando(linea, [], tabla, error=str(primer), nivel=nivel)
+        else:
+            executor.ejecutar(ast)
+            toks_log = [t for t in tokens if t.tipo.value != "EOF"]
+            canvas_v.actualizar(tabla)
+            canvas_v.set_status(f"OK  {linea}", "ok")
+            canvas_v.log_comando(linea, toks_log, tabla)
+            canvas_v.mostrar_ast(linea, ast)
+
+    except Exception as exc:
+        canvas_v.write_console(f"  ERROR INTERNO: {exc}", "error")
+        canvas_v.set_status(f"ERROR INTERNO: {exc}", "error")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ENTRADA PRINCIPAL
+# ══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     tabla    = TablaSimbolos()
     root     = tk.Tk()
     canvas_v = CanvasView(root)
-    executor = Executor(tabla)
-    threading.Thread(target=_repl, args=(tabla, executor, canvas_v, root), daemon=True).start()
+    executor = Executor(tabla, write_fn=canvas_v.write_console)
+
+    canvas_v.set_command_callback(
+        lambda linea: _proceso_comando(linea, tabla, executor, canvas_v)
+    )
+
+    canvas_v.write_console("  Intérprete de Figuras Geométricas", "info")
+    canvas_v.write_console("  Escribe  help  para ver los comandos.   exit  para salir.", "info")
+    canvas_v.write_console("", "")
+
     root.mainloop()

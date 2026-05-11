@@ -120,8 +120,31 @@ class CanvasView:
                   foreground=[("selected", "#cdd6f4")])
         style.configure("TPane.TFrame", background=STATUS_BG)
 
-        # -- Notebook directamente en root
-        self._nb = ttk.Notebook(root)
+        # ══ Packing del fondo hacia arriba para que expand sea correcto ═════════
+        # 1. Barra de estado — ancla al fondo absoluto
+        bar = tk.Frame(root, bg="#11111b", height=24)
+        bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        self._status_var = tk.StringVar(value="  listo.")
+        self._status_lbl = tk.Label(
+            bar,
+            textvariable=self._status_var,
+            bg="#11111b", fg=STATUS_OK,
+            font=("Consolas", 9),
+            anchor="w", padx=8,
+        )
+        self._status_lbl.pack(fill=tk.X)
+
+        # 2. Consola integrada — encima de la barra de estado
+        con_frame = tk.Frame(root, bg="#11111b")
+        con_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        self._build_console(con_frame)
+
+        # 3. Marco superior con Notebook — ocupa todo el espacio restante
+        top_frame = tk.Frame(root, bg=STATUS_BG)
+        top_frame.pack(fill=tk.BOTH, expand=True)
+
+        self._nb = ttk.Notebook(top_frame)
         self._nb.pack(fill=tk.BOTH, expand=True)
 
         # ── Pestaña 1: Canvas ─────────────────────────────────────────────────
@@ -145,23 +168,8 @@ class CanvasView:
         self._nb.add(tab_ast, text="  AST  ")
         self._build_ast_tab(tab_ast)
 
-        # ── Panel inferior: consola de salida + input ─────────────────────────
-
-        # -- Barra de estado
-        bar = tk.Frame(root, bg="#11111b", height=24)
-        bar.pack(side=tk.BOTTOM, fill=tk.X)
-
-        self._status_var = tk.StringVar(value="  listo.")
-        self._status_lbl = tk.Label(
-            bar,
-            textvariable=self._status_var,
-            bg="#11111b", fg=STATUS_OK,
-            font=("Consolas", 9),
-            anchor="w", padx=8,
-        )
-        self._status_lbl.pack(fill=tk.X)
-
-        # ── Registro de items canvas por id de figura ─────────────────────────
+        # ── Callback de comandos + registro de figuras ────────────────────────
+        self._cmd_callback = None
         self._items: Dict[str, List[int]] = {}
         self._cmd_count = 0
 
@@ -625,3 +633,92 @@ class CanvasView:
         ))
 
         self._items[e.id] = items
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CONSOLA INTEGRADA
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _build_console(self, parent: tk.Frame) -> None:
+        """Construye la consola de salida (ScrolledText) + Entry de entrada."""
+        from tkinter.scrolledtext import ScrolledText
+
+        # Separador visual entre Notebook y consola
+        tk.Frame(parent, bg="#313244", height=1).pack(fill=tk.X)
+
+        # ── Área de salida ────────────────────────────────────────────────────
+        self._console = ScrolledText(
+            parent,
+            wrap=tk.WORD,
+            height=8,
+            bg="#0d0d17",
+            fg="#cdd6f4",
+            insertbackground="#cdd6f4",
+            font=("Consolas", 10),
+            state="disabled",
+            relief=tk.FLAT,
+            highlightthickness=0,
+            selectbackground="#313244",
+        )
+        self._console.pack(fill=tk.X, padx=0, pady=0)
+
+        # Tags de colores para la consola
+        self._console.tag_config("cmd",   foreground="#89b4fa",  font=("Consolas", 10, "bold"))
+        self._console.tag_config("ok",    foreground="#a6e3a1")
+        self._console.tag_config("error", foreground="#f38ba8")
+        self._console.tag_config("warn",  foreground="#f9e2af")
+        self._console.tag_config("sug",   foreground="#89dceb")
+        self._console.tag_config("ptr",   foreground="#f9e2af",  font=("Consolas", 10, "bold"))
+        self._console.tag_config("info",  foreground="#6c7086")
+
+        # ── Fila de entrada ───────────────────────────────────────────────────
+        entry_row = tk.Frame(parent, bg="#11111b")
+        entry_row.pack(fill=tk.X, padx=0, pady=(1, 0))
+
+        tk.Label(
+            entry_row, text=">>>",
+            bg="#11111b", fg="#585b70",
+            font=("Consolas", 11, "bold"),
+            padx=8,
+        ).pack(side=tk.LEFT)
+
+        self._entry = tk.Entry(
+            entry_row,
+            bg="#1e1e2e", fg="#cdd6f4",
+            insertbackground="#cdd6f4",
+            font=("Consolas", 11),
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground="#313244",
+            highlightcolor="#89b4fa",
+        )
+        self._entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8), pady=4)
+        self._entry.bind("<Return>", self._on_enter)
+        self._entry.focus_force()
+
+    def write_console(self, text: str, tag: str = "") -> None:
+        """Escribe una línea en la consola de salida."""
+        self._console.configure(state=tk.NORMAL)
+        if tag:
+            self._console.insert(tk.END, text + "\n", tag)
+        else:
+            self._console.insert(tk.END, text + "\n")
+        self._console.see(tk.END)
+        self._console.configure(state=tk.DISABLED)
+
+    def set_command_callback(self, fn) -> None:
+        """Registra la función que se llama al presionar Enter en la consola."""
+        self._cmd_callback = fn
+
+    def _on_enter(self, event=None) -> None:
+        """Procesa la línea al presionar Enter; devuelve el foco al Entry."""
+        try:
+            cmd = self._entry.get().strip()
+            if not cmd:
+                return
+            self._entry.delete(0, tk.END)
+            if self._cmd_callback:
+                self._cmd_callback(cmd)
+        except Exception as e:
+            self.write_console(f"ERROR INTERNO: {e}", "error")
+        finally:
+            self._entry.focus_force()
