@@ -1,0 +1,627 @@
+"""
+canvas_view.py — Visualización en tiempo real de figuras geométricas.
+Usa tkinter (incluido en Python estándar, sin dependencias externas).
+
+Pestañas:
+  1. Canvas  — figuras dibujadas en tiempo real.
+  2. Historial — log de tokens léxicos y evolución de la tabla de símbolos.
+
+Sistema de coordenadas del canvas:
+  · Origen (0,0) en la esquina inferior-izquierda del área útil.
+  · X crece hacia la derecha, Y hacia arriba.
+  · Cada unidad de posición = GRID píxeles.
+  · Tamaño de figura = escala * UNIT píxeles.
+"""
+
+from __future__ import annotations
+
+import math
+import tkinter as tk
+from tkinter import ttk
+from typing import Dict, List, Optional
+
+from tabla_simbolos import EntradaFigura, TablaSimbolos
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONSTANTES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+W, H   = 920, 620          # tamaño del canvas en píxeles
+OX     = 70                # columna del origen en canvas  (px desde izq.)
+OY     = 550               # fila del origen en canvas     (px desde arriba)
+GRID   = 20                # píxeles por unidad de posición
+UNIT   = 15                # píxeles base para escala = 1
+
+# ── Paleta (Catppuccin Mocha) ─────────────────────────────────────────────────
+BG          = "#1e1e2e"
+GRID_MINOR  = "#313244"
+GRID_AXIS   = "#585b70"
+LABEL_FG    = "#cdd6f4"
+STATUS_BG   = "#181825"
+STATUS_OK   = "#a6e3a1"
+STATUS_WARN = "#f9e2af"
+STATUS_ERR  = "#f38ba8"
+OUTLINE_DEF = "#cdd6f4"
+
+# Mapeo tipo → color de relleno por defecto (si el color es "white" o no parseable)
+_TIPO_COLOR: Dict[str, str] = {
+    "circle":   "#89b4fa",
+    "square":   "#a6e3a1",
+    "triangle": "#f9e2af",
+    "line":     "#f38ba8",
+    "pentagon": "#cba6f7",
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# UTILIDADES DE COLOR
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _parse_color(raw: str, tipo: str) -> str:
+    """Convierte el lexema de color almacenado en la tabla a un color tkinter."""
+    # String entre comillas: "red" → red
+    if raw.startswith('"') and raw.endswith('"'):
+        inner = raw[1:-1].strip()
+        return inner if inner else _TIPO_COLOR.get(tipo, "white")
+
+    # Hexadecimal de nuestra gramática: #[0-9A-Fa-f]+
+    if raw.startswith('#'):
+        h = raw[1:]
+        try:
+            if len(h) == 6:                         # #RRGGBB
+                return raw
+            if len(h) == 3:                         # #RGB → #RRGGBB
+                r, g, b = h
+                return f"#{r}{r}{g}{g}{b}{b}"
+            if 1 <= len(h) <= 2:                    # escala de grises
+                v = int(h, 16) * 255 // (16 ** len(h) - 1)
+                return f"#{v:02x}{v:02x}{v:02x}"
+            if len(h) > 6:                          # recortar a los primeros 6
+                return f"#{h[:6]}"
+        except ValueError:
+            pass
+        return _TIPO_COLOR.get(tipo, "white")
+
+    # Nombre de color de texto plano (sin comillas, ej. generado internamente)
+    return raw if raw else _TIPO_COLOR.get(tipo, "white")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CANVAS VIEW
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CanvasView:
+    """
+    Ventana tk con tres pestañas + consola integrada:
+      · "Canvas"    — figuras geométricas en tiempo real.
+      · "Historial" — log léxico y evolución de la tabla de símbolos.
+      · "AST"       — árbol del último comando parseado.
+      Consola de salida + barra de input en la parte inferior.
+    """
+
+    def __init__(self, root: tk.Tk) -> None:
+        self._root = root
+        root.title("Figuras Geométricas — intérprete")
+        root.configure(bg=STATUS_BG)
+        root.resizable(True, True)
+        root.minsize(W + 20, 680)
+
+        # ── Estilo del Notebook ───────────────────────────────────────────────
+        style = ttk.Style(root)
+        style.theme_use("clam")
+        style.configure("TNotebook",
+                         background=STATUS_BG, borderwidth=0)
+        style.configure("TNotebook.Tab",
+                         background="#313244", foreground=LABEL_FG,
+                         padding=[14, 4], font=("Consolas", 10))
+        style.map("TNotebook.Tab",
+                  background=[("selected", "#45475a")],
+                  foreground=[("selected", "#cdd6f4")])
+        style.configure("TPane.TFrame", background=STATUS_BG)
+
+        # -- Notebook directamente en root
+        self._nb = ttk.Notebook(root)
+        self._nb.pack(fill=tk.BOTH, expand=True)
+
+        # ── Pestaña 1: Canvas ─────────────────────────────────────────────────
+        tab_canvas = tk.Frame(self._nb, bg=BG)
+        self._nb.add(tab_canvas, text="  Canvas  ")
+
+        self._canvas = tk.Canvas(
+            tab_canvas, width=W, height=H,
+            bg=BG, highlightthickness=0,
+        )
+        self._canvas.pack(side=tk.TOP)
+        self._draw_grid()
+
+        # ── Pestaña 2: Historial ──────────────────────────────────────────────
+        tab_hist = tk.Frame(self._nb, bg=STATUS_BG)
+        self._nb.add(tab_hist, text="  Historial  ")
+        self._build_historial(tab_hist)
+
+        # ── Pestaña 3: AST ────────────────────────────────────────────────────
+        tab_ast = tk.Frame(self._nb, bg=STATUS_BG)
+        self._nb.add(tab_ast, text="  AST  ")
+        self._build_ast_tab(tab_ast)
+
+        # ── Panel inferior: consola de salida + input ─────────────────────────
+
+        # -- Barra de estado
+        bar = tk.Frame(root, bg="#11111b", height=24)
+        bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        self._status_var = tk.StringVar(value="  listo.")
+        self._status_lbl = tk.Label(
+            bar,
+            textvariable=self._status_var,
+            bg="#11111b", fg=STATUS_OK,
+            font=("Consolas", 9),
+            anchor="w", padx=8,
+        )
+        self._status_lbl.pack(fill=tk.X)
+
+        # ── Registro de items canvas por id de figura ─────────────────────────
+        self._items: Dict[str, List[int]] = {}
+        self._cmd_count = 0
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PESTAÑA HISTORIAL — construcción
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _build_historial(self, parent: tk.Frame) -> None:
+        """Construye el panel de historial con dos secciones scrollables."""
+
+        # ── Sección superior: log léxico ──────────────────────────────────────
+        tk.Label(parent, text=" LOG LÉXICO / PIPELINE",
+                 bg=STATUS_BG, fg="#7f849c",
+                 font=("Consolas", 9, "bold"),
+                 anchor="w").pack(fill=tk.X, padx=6, pady=(6, 0))
+
+        lex_frame = tk.Frame(parent, bg=STATUS_BG)
+        lex_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=4)
+
+        lex_scroll = tk.Scrollbar(lex_frame, orient=tk.VERTICAL)
+        lex_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self._lex_text = tk.Text(
+            lex_frame,
+            bg="#11111b", fg=LABEL_FG,
+            font=("Consolas", 9),
+            height=14,
+            state=tk.DISABLED,
+            yscrollcommand=lex_scroll.set,
+            wrap=tk.NONE,
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground="#313244",
+        )
+        self._lex_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        lex_scroll.config(command=self._lex_text.yview)
+
+        # Tags de colores para el log léxico
+        self._lex_text.tag_config("cmd",     foreground="#89dceb", font=("Consolas", 9, "bold"))
+        self._lex_text.tag_config("header",  foreground="#7f849c", font=("Consolas", 9, "italic"))
+        self._lex_text.tag_config("token",   foreground="#cba6f7")
+        self._lex_text.tag_config("ok",      foreground=STATUS_OK)
+        self._lex_text.tag_config("err",     foreground=STATUS_ERR)
+        self._lex_text.tag_config("warn",    foreground=STATUS_WARN)
+        self._lex_text.tag_config("sep",     foreground="#313244")
+
+        # ── Separador ─────────────────────────────────────────────────────────
+        tk.Frame(parent, bg="#313244", height=2).pack(fill=tk.X, padx=6)
+
+        # ── Sección inferior: tabla de símbolos ───────────────────────────────
+        tk.Label(parent, text=" TABLA DE SÍMBOLOS — evolución",
+                 bg=STATUS_BG, fg="#7f849c",
+                 font=("Consolas", 9, "bold"),
+                 anchor="w").pack(fill=tk.X, padx=6, pady=(4, 0))
+
+        sym_frame = tk.Frame(parent, bg=STATUS_BG)
+        sym_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=(4, 6))
+
+        sym_scroll_y = tk.Scrollbar(sym_frame, orient=tk.VERTICAL)
+        sym_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        sym_scroll_x = tk.Scrollbar(sym_frame, orient=tk.HORIZONTAL)
+        sym_scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
+
+        self._sym_text = tk.Text(
+            sym_frame,
+            bg="#11111b", fg=LABEL_FG,
+            font=("Consolas", 9),
+            height=10,
+            state=tk.DISABLED,
+            yscrollcommand=sym_scroll_y.set,
+            xscrollcommand=sym_scroll_x.set,
+            wrap=tk.NONE,
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground="#313244",
+        )
+        self._sym_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sym_scroll_y.config(command=self._sym_text.yview)
+        sym_scroll_x.config(command=self._sym_text.xview)
+
+        # Tags de colores tabla de símbolos
+        self._sym_text.tag_config("th",      foreground="#7f849c", font=("Consolas", 9, "italic"))
+        self._sym_text.tag_config("id_col",  foreground="#89b4fa")
+        self._sym_text.tag_config("tipo",    foreground="#cba6f7")
+        self._sym_text.tag_config("active",  foreground=STATUS_OK)
+        self._sym_text.tag_config("hidden",  foreground=STATUS_WARN)
+        self._sym_text.tag_config("deleted", foreground=STATUS_ERR)
+        self._sym_text.tag_config("sep",     foreground="#313244")
+        self._sym_text.tag_config("cmd_ref", foreground="#89dceb", font=("Consolas", 9, "bold"))
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # API PÚBLICA
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def actualizar(self, tabla: TablaSimbolos) -> None:
+        """Re-dibuja el canvas con el estado actual de la tabla."""
+        for item_ids in self._items.values():
+            for iid in item_ids:
+                self._canvas.delete(iid)
+        self._items.clear()
+
+        for entrada in tabla.listar():
+            if not entrada.eliminada:
+                self._dibujar(entrada)
+
+    def set_status(self, msg: str, level: str = "ok") -> None:
+        """Actualiza la barra de estado compartida."""
+        color = {"ok": STATUS_OK, "warn": STATUS_WARN, "error": STATUS_ERR}.get(level, STATUS_OK)
+        self._status_var.set(f"  {msg}")
+        self._status_lbl.configure(fg=color)
+
+    def log_comando(
+        self,
+        linea:   str,
+        tokens:  list,
+        tabla:   TablaSimbolos,
+        error:   Optional[str] = None,
+        nivel:   str = "ok",
+    ) -> None:
+        """
+        Registra en el historial:
+          · Número y texto del comando.
+          · Tokens producidos por el lexer.
+          · Estado actual de la tabla de símbolos.
+          · Error si lo hubo.
+        """
+        self._cmd_count += 1
+        n = self._cmd_count
+        self._log_lexico(n, linea, tokens, error, nivel)
+        self._log_tabla(n, tabla)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # HISTORIAL — escritura
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _txt_append(self, widget: tk.Text, text: str, tag: str = "") -> None:
+        widget.configure(state=tk.NORMAL)
+        if tag:
+            widget.insert(tk.END, text, tag)
+        else:
+            widget.insert(tk.END, text)
+        widget.see(tk.END)
+        widget.configure(state=tk.DISABLED)
+
+    def _log_lexico(
+        self,
+        n:      int,
+        linea:  str,
+        tokens: list,
+        error:  Optional[str],
+        nivel:  str,
+    ) -> None:
+        w = self._lex_text
+        sep = "─" * 72 + "\n"
+        self._txt_append(w, sep, "sep")
+        self._txt_append(w, f"  #{n:03d}  ", "header")
+        self._txt_append(w, f"{linea}\n", "cmd")
+
+        if error:
+            tag = "err" if nivel == "error" else "warn"
+            self._txt_append(w, f"  ✗  {error}\n", tag)
+        else:
+            self._txt_append(w, "  tokens:\n", "header")
+            for tok in tokens:
+                tipo_str   = f"{tok.tipo.value:<22}"
+                lexema_str = f"lexema={tok.lexema!r:<16}"
+                pos_str    = f"L{tok.linea}:C{tok.columna}"
+                self._txt_append(w, f"    {tipo_str} {lexema_str} {pos_str}\n", "token")
+            self._txt_append(w, "  ✓  ok\n", "ok")
+
+    def _log_tabla(self, n: int, tabla: TablaSimbolos) -> None:
+        w    = self._sym_text
+        sep  = "─" * 80 + "\n"
+        cols = f"  {'ID':<16} {'TIPO':<10} {'COLOR':<10} {'ESC':<5} {'POSICION':<12} ESTADO\n"
+
+        self._txt_append(w, sep, "sep")
+        self._txt_append(w, f"  tras #{n:03d}  ", "th")
+        self._txt_append(w, f"({len([e for e in tabla.listar() if not e.eliminada])} activas)\n", "th")
+        self._txt_append(w, cols, "th")
+        self._txt_append(w,
+            f"  {'─'*16} {'─'*10} {'─'*10} {'─'*5} {'─'*12} {'─'*8}\n", "sep")
+
+        figuras = tabla.listar()
+        if not figuras:
+            self._txt_append(w, "  (tabla vacía)\n", "th")
+            return
+
+        for e in figuras:
+            if e.eliminada:
+                estado_tag, estado_txt = "deleted", "ELIMINADA"
+            elif not e.visible:
+                estado_tag, estado_txt = "hidden",  "oculta"
+            else:
+                estado_tag, estado_txt = "active",  "visible"
+
+            self._txt_append(w, f"  {e.id:<16} ", "id_col")
+            self._txt_append(w, f"{e.tipo:<10} ", "tipo")
+            self._txt_append(w,
+                f"{e.color:<10} {e.escala:<5} {str(list(e.posicion)):<12} ")
+            self._txt_append(w, f"{estado_txt}\n", estado_tag)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PESTAÑA AST — construcción y actualización
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _build_ast_tab(self, parent: tk.Frame) -> None:
+        """Construye el panel del AST con un widget de texto scrollable."""
+        header_frame = tk.Frame(parent, bg=STATUS_BG)
+        header_frame.pack(fill=tk.X, padx=6, pady=(6, 0))
+
+        tk.Label(
+            header_frame, text=" ÁRBOL DE SINTAXIS ABSTRACTA — último comando",
+            bg=STATUS_BG, fg="#7f849c",
+            font=("Consolas", 9, "bold"), anchor="w",
+        ).pack(side=tk.LEFT)
+
+        self._ast_cmd_lbl = tk.Label(
+            header_frame, text="",
+            bg=STATUS_BG, fg="#89dceb",
+            font=("Consolas", 9, "bold"), anchor="w",
+        )
+        self._ast_cmd_lbl.pack(side=tk.LEFT, padx=(8, 0))
+
+        frame = tk.Frame(parent, bg=STATUS_BG)
+        frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=(4, 6))
+
+        scroll_y = tk.Scrollbar(frame, orient=tk.VERTICAL)
+        scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        scroll_x = tk.Scrollbar(frame, orient=tk.HORIZONTAL)
+        scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
+
+        self._ast_text = tk.Text(
+            frame,
+            bg="#11111b", fg=LABEL_FG,
+            font=("Consolas", 10),
+            state=tk.DISABLED,
+            yscrollcommand=scroll_y.set,
+            xscrollcommand=scroll_x.set,
+            wrap=tk.NONE,
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground="#313244",
+        )
+        self._ast_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scroll_y.config(command=self._ast_text.yview)
+        scroll_x.config(command=self._ast_text.xview)
+
+        # Tags de colores
+        self._ast_text.tag_config("node",    foreground="#89b4fa",  font=("Consolas", 10, "bold"))
+        self._ast_text.tag_config("field",   foreground="#cba6f7")
+        self._ast_text.tag_config("value",   foreground="#a6e3a1")
+        self._ast_text.tag_config("branch",  foreground="#45475a")
+        self._ast_text.tag_config("wildcard",foreground="#f9e2af")
+        self._ast_text.tag_config("hint",    foreground="#6c7086",  font=("Consolas", 9, "italic"))
+
+    def mostrar_ast(self, linea: str, ast: object) -> None:
+        """Reemplaza el contenido del panel AST con el árbol del comando actual."""
+        self._ast_cmd_lbl.configure(text=f"→  {linea}")
+        w = self._ast_text
+        w.configure(state=tk.NORMAL)
+        w.delete("1.0", tk.END)
+        w.configure(state=tk.DISABLED)
+        self._ast_render(ast, depth=0, prefix="", is_last=True)
+        # Cambiar automáticamente a la pestaña AST
+        self._nb.select(2)
+
+    def _ast_render(self, nodo: object, depth: int, prefix: str, is_last: bool) -> None:
+        """Renderiza recursivamente el nodo AST con líneas de árbol Unicode."""
+        from ast_nodes import (
+            ProgramaNode, CreateNode, UpdateNode, DeleteNode,
+            ShowNode, HideNode, ListNode, ClearNode, HelpNode,
+            ParametrosNode, ParametrosUpdateNode, ValorUpdateNode, PosicionNode,
+        )
+
+        w          = self._ast_text
+        connector  = "└── " if is_last else "├── "
+        child_pre  = prefix + ("    " if is_last else "│   ")
+
+        def line(text: str, tag: str = "") -> None:
+            self._txt_append(w, prefix + connector, "branch")
+            self._txt_append(w, text + "\n", tag)
+
+        def field_val(key: str, val: str, vtag: str = "value") -> None:
+            self._txt_append(w, child_pre + "    ", "branch")
+            self._txt_append(w, f"{key}: ", "field")
+            self._txt_append(w, val + "\n", vtag)
+
+        if isinstance(nodo, ProgramaNode):
+            self._txt_append(w, "ProgramaNode\n", "node")
+            for i, cmd in enumerate(nodo.comandos):
+                last = (i == len(nodo.comandos) - 1)
+                self._ast_render(cmd, depth + 1, "", last)
+            return
+
+        if isinstance(nodo, CreateNode):
+            line("CreateNode", "node")
+            field_val("tipo_figura", nodo.tipo_figura)
+            if nodo.parametros:
+                self._ast_render(nodo.parametros, depth + 1, child_pre, is_last=True)
+            else:
+                self._txt_append(w, child_pre + "    └── ", "branch")
+                self._txt_append(w, "parametros: (por defecto)\n", "hint")
+
+        elif isinstance(nodo, UpdateNode):
+            line("UpdateNode", "node")
+            field_val("id", nodo.id)
+            self._ast_render(nodo.parametros, depth + 1, child_pre, is_last=True)
+
+        elif isinstance(nodo, DeleteNode):
+            line("DeleteNode", "node")
+            field_val("id", nodo.id)
+
+        elif isinstance(nodo, ShowNode):
+            line("ShowNode", "node")
+            field_val("id", nodo.id)
+
+        elif isinstance(nodo, HideNode):
+            line("HideNode", "node")
+            field_val("id", nodo.id)
+
+        elif isinstance(nodo, ListNode):
+            line("ListNode", "node")
+
+        elif isinstance(nodo, ClearNode):
+            line("ClearNode", "node")
+            field_val("scope", nodo.scope)
+
+        elif isinstance(nodo, HelpNode):
+            line("HelpNode", "node")
+
+        elif isinstance(nodo, ParametrosNode):
+            self._txt_append(w, child_pre + "└── ", "branch")
+            self._txt_append(w, "ParametrosNode\n", "node")
+            pp = child_pre + "    "
+            self._txt_append(w, pp + "├── ", "branch")
+            self._txt_append(w, "color: ",   "field")
+            self._txt_append(w, nodo.color + "\n", "value")
+            self._txt_append(w, pp + "├── ", "branch")
+            self._txt_append(w, "escala: ",  "field")
+            self._txt_append(w, str(nodo.escala) + "\n", "value")
+            self._txt_append(w, pp + "└── ", "branch")
+            self._txt_append(w, "posicion: ", "field")
+            self._txt_append(w, f"[{nodo.posicion.x}, {nodo.posicion.y}]\n", "value")
+
+        elif isinstance(nodo, ParametrosUpdateNode):
+            self._txt_append(w, child_pre + "└── ", "branch")
+            self._txt_append(w, "ParametrosUpdateNode\n", "node")
+            pp = child_pre + "    "
+            for label, slot in (("color", nodo.color), ("escala", nodo.escala), ("posicion", nodo.posicion)):
+                connector2 = "└── " if label == "posicion" else "├── "
+                self._txt_append(w, pp + connector2, "branch")
+                self._txt_append(w, f"{label}: ", "field")
+                if slot.tipo == "wildcard":
+                    self._txt_append(w, "_ (conservar)\n", "wildcard")
+                else:
+                    self._txt_append(w, f"{slot.valor!r}\n", "value")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CANVAS — grid y dibujo
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _draw_grid(self) -> None:
+        # Líneas menores
+        x = OX
+        while x <= W:
+            self._canvas.create_line(x, 0, x, H, fill=GRID_MINOR, tags="grid")
+            x += GRID
+        y = OY % GRID
+        while y <= H:
+            self._canvas.create_line(0, y, W, y, fill=GRID_MINOR, tags="grid")
+            y += GRID
+
+        # Ejes
+        self._canvas.create_line(OX, 0,  OX, H,  fill=GRID_AXIS, width=1, tags="grid")
+        self._canvas.create_line(0,  OY, W,  OY, fill=GRID_AXIS, width=1, tags="grid")
+
+        # Etiquetas de ejes
+        fnt = ("Consolas", 8)
+        for ux in range(0, (W - OX) // GRID + 1, 5):
+            px = OX + ux * GRID
+            self._canvas.create_text(px, OY + 12, text=str(ux), fill=GRID_AXIS, font=fnt, tags="grid")
+        for uy in range(0, OY // GRID + 1, 5):
+            py = OY - uy * GRID
+            if uy:
+                self._canvas.create_text(OX - 14, py, text=str(uy), fill=GRID_AXIS, font=fnt, tags="grid")
+
+    # ── Dibujo de figuras ─────────────────────────────────────────────────────
+
+    def _to_canvas(self, x: int, y: int) -> tuple:
+        """Convierte coordenadas lógicas a píxeles del canvas."""
+        return OX + x * GRID, OY - y * GRID
+
+    def _dibujar(self, e: EntradaFigura) -> None:
+        cx, cy  = self._to_canvas(*e.posicion)
+        sz      = max(e.escala * UNIT, 4)
+        outline = OUTLINE_DEF
+        items: List[int] = []
+
+        if e.visible:
+            # Figura visible: relleno sólido
+            fill = _parse_color(e.color, e.tipo)
+            kw   = dict(fill=fill, outline=outline, width=2)
+            dash = None
+        else:
+            # Figura oculta: sin relleno, contorno punteado tenue
+            fill = ""
+            kw   = dict(fill="", outline="#585b70", width=1)
+            dash = (4, 4)
+
+        if e.tipo == "circle":
+            iid = self._canvas.create_oval(
+                cx - sz, cy - sz, cx + sz, cy + sz, **kw)
+            if dash:
+                self._canvas.itemconfig(iid, dash=dash)
+            items.append(iid)
+
+        elif e.tipo == "square":
+            iid = self._canvas.create_rectangle(
+                cx - sz, cy - sz, cx + sz, cy + sz, **kw)
+            if dash:
+                self._canvas.itemconfig(iid, dash=dash)
+            items.append(iid)
+
+        elif e.tipo == "triangle":
+            pts = [cx, cy - sz, cx - sz, cy + sz, cx + sz, cy + sz]
+            iid = self._canvas.create_polygon(pts, **kw)
+            if dash:
+                self._canvas.itemconfig(iid, dash=dash)
+            items.append(iid)
+
+        elif e.tipo == "line":
+            color_linea = _parse_color(e.color, e.tipo) if e.visible else "#585b70"
+            kw_line = dict(fill=color_linea, width=max(3, e.escala * 2))
+            if dash:
+                kw_line["dash"] = dash
+            items.append(self._canvas.create_line(
+                cx - sz, cy, cx + sz, cy, **kw_line))
+
+        elif e.tipo == "pentagon":
+            pts: List[float] = []
+            for i in range(5):
+                a = math.radians(-90 + i * 72)
+                pts += [cx + sz * math.cos(a), cy + sz * math.sin(a)]
+            iid = self._canvas.create_polygon(pts, **kw)
+            if dash:
+                self._canvas.itemconfig(iid, dash=dash)
+            items.append(iid)
+
+        # Etiqueta con el id de la figura
+        items.append(self._canvas.create_text(
+            cx, cy + sz + 14,
+            text=e.id,
+            fill=LABEL_FG,
+            font=("Consolas", 8, "bold"),
+        ))
+
+        # Pequeño punto en el origen de la figura
+        items.append(self._canvas.create_oval(
+            cx - 2, cy - 2, cx + 2, cy + 2,
+            fill=OUTLINE_DEF, outline="",
+        ))
+
+        self._items[e.id] = items

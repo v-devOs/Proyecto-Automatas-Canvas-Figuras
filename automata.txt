@@ -1,0 +1,74 @@
+digraph AFD_Lexico {
+    rankdir=LR;
+    node [shape=circle];
+
+    // Estados principales
+    q0 [label="q0\ninicio"];
+    qL [label="qL\nletras"];
+    qID1 [label="qID1\n1 dígito"];
+    qID2 [label="qID2\n2 dígitos"];
+    qID3 [label="qID3\n3 dígitos"];
+    qID4 [label="qID4\n4 dígitos"];
+    qD [label="qD\nnum dec"];
+    qH [label="qH\n#"];
+    qH1 [label="qH1\nhex"];
+    qS [label="qS\nstring"];
+    qE [label="qE\nerror"];
+
+    // Estados de aceptación
+    qPR [shape=doublecircle, label="PALABRA_RESERVADA"];
+    qTF [shape=doublecircle, label="TIPO_FIGURA"];
+    qIDF [shape=doublecircle, label="IDENTIFICADOR"];
+    qNUM [shape=doublecircle, label="NUM_DEC"];
+    qHEX [shape=doublecircle, label="NUM_HEX"];
+    qSTR [shape=doublecircle, label="STRING"];
+    qSYM [shape=doublecircle, label="SIMBOLO"];
+
+    // Estado inicial
+    q0 -> qL [label="letra"];
+    q0 -> qD [label="dígito"];
+    q0 -> qH [label="#"];
+    q0 -> qS [label="\""];
+    q0 -> qSYM [label="( ) , _ [ ]"];
+    q0 -> q0 [label="espacio"];
+    q0 -> qE [label="otro"];
+
+    // Letras
+    qL -> qL [label="letra"];
+    qL -> qID1 [label="dígito"];
+    qL -> qPR [label="fin (si reservada)"];
+    qL -> qTF [label="fin (si tipo)"];
+    qL -> qE [label="otro"];
+
+    // Identificadores
+    qID1 -> qID2 [label="dígito"];
+    qID2 -> qID3 [label="dígito"];
+    qID3 -> qID4 [label="dígito"];
+    qID4 -> qIDF [label="fin"];
+
+    qID1 -> qE [label="otro"];
+    qID2 -> qE [label="otro"];
+    qID3 -> qE [label="otro"];
+    qID4 -> qE [label="white space"];
+
+    // Números decimales
+    qD -> qD [label="dígito"];
+    qD -> qNUM [label="fin"];
+    qD -> qE [label="otro inválido"];
+
+    // Hexadecimales
+    qH -> qH1 [label="[0-9A-Fa-f]"];
+    qH -> qE [label="otro"];
+
+    qH1 -> qH1 [label="[0-9A-Fa-f]"];
+    qH1 -> qHEX [label="fin"];
+    qH1 -> qE [label="otro inválido"];
+
+    // Strings
+    qS -> qS [label="≠\""];
+    qS -> qSTR [label="\""];
+    qS -> qE [label="EOF u otro inválido"];
+
+    // Transiciones globales implícitas a error
+    // (puedes mencionar esto en tu documento en lugar de dibujar todas)
+}

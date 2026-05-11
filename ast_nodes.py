@@ -1,0 +1,128 @@
+"""
+ast_nodes.py — Nodos del Árbol de Sintaxis Abstracta (AST)
+
+Cada nodo representa un constructo del lenguaje de figuras geométricas.
+El AST NO contiene paréntesis, comas ni detalles sintácticos.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import List, Optional, Union
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NODOS DE VALORES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class PosicionNode:
+    """[x, y] — coordenadas enteras."""
+    x: int
+    y: int
+
+    def __repr__(self) -> str:
+        return f"[{self.x}, {self.y}]"
+
+
+@dataclass
+class ValorUpdateNode:
+    """
+    Un valor en un slot de update.
+
+    tipo  : "color" | "escala" | "posicion" | "wildcard"
+    valor : str (color), int (escala), PosicionNode, o None (wildcard)
+    """
+    tipo:  str
+    valor: Optional[Union[str, int, PosicionNode]]
+
+    def __repr__(self) -> str:
+        if self.tipo == "wildcard":
+            return "_"
+        return f"{self.tipo}({self.valor!r})"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NODOS DE PARÁMETROS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class ParametrosNode:
+    """Parámetros completos de un create: color, escala y posición."""
+    color:    str           # lexema STRING o NUM_HEX
+    escala:   int
+    posicion: PosicionNode
+
+
+@dataclass
+class ParametrosUpdateNode:
+    """
+    Tres slots posicionales de un update.
+    El slot 1 corresponde a color, 2 a escala, 3 a posición.
+    Cada uno puede ser su valor o wildcard (_).
+    La validación de compatibilidad tipo-slot es responsabilidad del semántico.
+    """
+    color:    ValorUpdateNode
+    escala:   ValorUpdateNode
+    posicion: ValorUpdateNode
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NODOS DE COMANDOS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class CreateNode:
+    tipo_figura: str
+    parametros:  Optional[ParametrosNode] = None
+
+
+@dataclass
+class UpdateNode:
+    id:         str
+    parametros: ParametrosUpdateNode
+
+
+@dataclass
+class DeleteNode:
+    id: str
+
+
+@dataclass
+class ShowNode:
+    id: str
+
+
+@dataclass
+class HideNode:
+    id: str
+
+
+@dataclass
+class ListNode:
+    pass
+
+
+@dataclass
+class ClearNode:
+    scope: str   # siempre "screen"
+
+
+@dataclass
+class HelpNode:
+    pass
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NODO RAÍZ
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ComandoNode = Union[
+    CreateNode, UpdateNode, DeleteNode,
+    ShowNode, HideNode, ListNode, ClearNode, HelpNode,
+]
+
+
+@dataclass
+class ProgramaNode:
+    comandos: List[ComandoNode] = field(default_factory=list)
