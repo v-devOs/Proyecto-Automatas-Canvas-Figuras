@@ -9,11 +9,18 @@ Reglas implementadas:
              M004 si escala ≤ 0
   update  → M001 si la figura no existe
              M005 si la figura está eliminada
+             M007 si el objetivo es un grupo
              M003 si el tipo del valor no corresponde al slot
              M004 si la nueva escala ≤ 0
   delete  → M001 si no existe / M005 si ya eliminada
-  show    → M001 si no existe / M005 si eliminada
-  hide    → M001 si no existe / M005 si eliminada
+  show    → M001/M005; cascada si es un grupo
+  hide    → M001/M005; cascada si es un grupo
+  rotate  → M001/M005; cascada si es un grupo
+  move    → M001/M005; cascada si es un grupo; desplazamiento relativo
+  copy    → M001/M005/M007 si el origen es un grupo
+  group   → M001/M005 por cada miembro; M007 si el miembro ya es un grupo
+  ungroup → M001/M005/M008 si el ID no es un grupo
+  scale   → M001/M005; cascada si es un grupo; M004 si nueva escala ≤ 0
   list    → sin validación semántica
   clear   → vacía la tabla
   help    → sin validación semántica
@@ -32,6 +39,7 @@ from ast_nodes import (
     ProgramaNode, ComandoNode,
     CreateNode, UpdateNode, DeleteNode,
     ShowNode, HideNode, ListNode, ClearNode, HelpNode, RotateNode,
+    MoveNode, CopyNode, GroupNode, UngroupNode, ScaleNode,
     ParametrosLineaNode, ParametrosUpdateNode, ParametrosUpdateLineaNode, ValorUpdateNode,
 )
 from tabla_simbolos import EntradaFigura, TablaSimbolos
@@ -49,6 +57,9 @@ class ErrorSemantico(Exception):
         M003  tipo de valor inválido en slot de update
         M004  escala inválida  (≤ 0)
         M005  figura eliminada
+        M006  create line sin parámetros requeridos
+        M007  operación no soportada sobre grupo
+        M008  operación ungroup sobre no-grupo
     """
     def __init__(self, codigo: str, mensaje: str, sugerencia: str = "") -> None:
         super().__init__(f"[{codigo}] {mensaje}")
@@ -88,15 +99,20 @@ class AnalizadorSemantico:
         self._tabla  = tabla
         self.errores: List[ErrorSemantico] = []
         self._dispatch = {
-            CreateNode: self._check_create,
-            UpdateNode: self._check_update,
-            DeleteNode: self._check_delete,
-            ShowNode:   self._check_show,
-            HideNode:   self._check_hide,
-            ListNode:   self._check_list,
-            ClearNode:  self._check_clear,
-            HelpNode:   self._check_help,
-            RotateNode: self._check_rotate,
+            CreateNode:  self._check_create,
+            UpdateNode:  self._check_update,
+            DeleteNode:  self._check_delete,
+            ShowNode:    self._check_show,
+            HideNode:    self._check_hide,
+            ListNode:    self._check_list,
+            ClearNode:   self._check_clear,
+            HelpNode:    self._check_help,
+            RotateNode:  self._check_rotate,
+            MoveNode:    self._check_move,
+            CopyNode:    self._check_copy,
+            GroupNode:   self._check_group,
+            UngroupNode: self._check_ungroup,
+            ScaleNode:   self._check_scale,
         }
 
     # ── API pública ───────────────────────────────────────────────────────────
@@ -168,6 +184,12 @@ class AnalizadorSemantico:
 
     def _check_update(self, nodo: UpdateNode) -> None:
         entrada = self._obtener_activa(nodo.id)  # M001 / M005
+        if entrada.tipo == "group":
+            raise ErrorSemantico(
+                "M007",
+                f"no se puede actualizar un grupo directamente: {nodo.id!r}",
+                sugerencia="Usa 'update' sobre cada figura miembro individualmente",
+            )
 
         params = nodo.parametros
 
@@ -215,14 +237,14 @@ class AnalizadorSemantico:
     # ── show ──────────────────────────────────────────────────────────────────
 
     def _check_show(self, nodo: ShowNode) -> None:
-        entrada = self._obtener_activa(nodo.id)  # M001 / M005
-        entrada.visible = True
+        for entrada in self._expandir_ids(nodo.id):  # M001 / M005; cascada para grupos
+            entrada.visible = True
 
-    # ── hide ──────────────────────────────────────────────────────────────────
+    # ── hide ───────────────────────────────────────────────────────────────
 
     def _check_hide(self, nodo: HideNode) -> None:
-        entrada = self._obtener_activa(nodo.id)  # M001 / M005
-        entrada.visible = False
+        for entrada in self._expandir_ids(nodo.id):  # M001 / M005; cascada para grupos
+            entrada.visible = False
 
     # ── list / clear / help ───────────────────────────────────────────────────
 
@@ -232,8 +254,8 @@ class AnalizadorSemantico:
     # ── rotate ────────────────────────────────────────────────────────────────────────────
 
     def _check_rotate(self, nodo: RotateNode) -> None:
-        entrada = self._obtener_activa(nodo.id)  # M001 / M005
-        entrada.rotacion = (entrada.rotacion + nodo.grados) % 360
+        for entrada in self._expandir_ids(nodo.id):  # M001 / M005; cascada para grupos
+            entrada.rotacion = (entrada.rotacion + nodo.grados) % 360
 
     def _check_clear(self, nodo: ClearNode) -> None:
         self._tabla.vaciar()
@@ -241,8 +263,106 @@ class AnalizadorSemantico:
     def _check_help(self, nodo: HelpNode) -> None:
         pass
 
-    # ── Utilidades de validación ──────────────────────────────────────────────
+    # ── move ───────────────────────────────────────────────────────────────────────
 
+    def _check_move(self, nodo: MoveNode) -> None:
+        """Desplazamiento relativo (+dx, +dy). Cascada para grupos."""
+        for entrada in self._expandir_ids(nodo.id):  # M001 / M005
+            entrada.posicion = (
+                entrada.posicion[0] + nodo.dx,
+                entrada.posicion[1] + nodo.dy,
+            )
+            if entrada.pos_fin is not None:
+                entrada.pos_fin = (
+                    entrada.pos_fin[0] + nodo.dx,
+                    entrada.pos_fin[1] + nodo.dy,
+                )
+
+    # ── copy ───────────────────────────────────────────────────────────────────────
+
+    def _check_copy(self, nodo: CopyNode) -> None:
+        """Duplica la figura con un nuevo ID autogenerado."""
+        origen = self._obtener_activa(nodo.id)  # M001 / M005
+        if origen.tipo == "group":
+            raise ErrorSemantico(
+                "M007",
+                f"no se puede copiar un grupo: {nodo.id!r}",
+                sugerencia="'copy' solo funciona sobre figuras individuales",
+            )
+        nuevo_id = self._tabla.siguiente_id(origen.tipo)
+        from tabla_simbolos import EntradaFigura
+        self._tabla.insertar(EntradaFigura(
+            id       = nuevo_id,
+            tipo     = origen.tipo,
+            color    = origen.color,
+            escala   = origen.escala,
+            posicion = origen.posicion,
+            pos_fin  = origen.pos_fin,
+            rotacion = origen.rotacion,
+        ))
+
+    # ── group ────────────────────────────────────────────────────────────────────
+
+    def _check_group(self, nodo: GroupNode) -> None:
+        """Crea una entrada de grupo que referencia a sus figuras miembro."""
+        for mid in nodo.ids:
+            m = self._obtener_activa(mid)  # M001 / M005 por cada miembro
+            if m.tipo == "group":
+                raise ErrorSemantico(
+                    "M007",
+                    f"no se permiten grupos anidados: {mid!r}",
+                    sugerencia="Los miembros de un grupo deben ser figuras individuales",
+                )
+        nuevo_id = self._tabla.siguiente_id("group")
+        from tabla_simbolos import EntradaFigura
+        self._tabla.insertar(EntradaFigura(
+            id        = nuevo_id,
+            tipo      = "group",
+            color     = "",
+            escala    = 0,
+            posicion  = (0, 0),
+            grupo_ids = list(nodo.ids),
+        ))
+
+    # ── ungroup ─────────────────────────────────────────────────────────────────
+
+    def _check_ungroup(self, nodo: UngroupNode) -> None:
+        """Disuelve el grupo: marca la entrada como eliminada; los miembros quedan intactos."""
+        entrada = self._obtener_activa(nodo.id)  # M001 / M005
+        if entrada.tipo != "group":
+            raise ErrorSemantico(
+                "M008",
+                f"el identificador {nodo.id!r} no es un grupo",
+                sugerencia="Usa 'list' para ver los grupos activos (prefijo 'group')",
+            )
+        entrada.eliminada = True
+
+    # ── scale ──────────────────────────────────────────────────────────────────────
+
+    def _check_scale(self, nodo: ScaleNode) -> None:
+        """Multiplica la escala de la figura (o de cada miembro del grupo) por factor."""
+        if nodo.factor <= 0:
+            raise ErrorSemantico(
+                "M004",
+                f"factor de escala inválido: {nodo.factor} (debe ser > 0)",
+                sugerencia="El factor debe ser un entero positivo. Ej: scale circle0001 (2)",
+            )
+        for entrada in self._expandir_ids(nodo.id):  # M001 / M005; cascada para grupos
+            nueva = entrada.escala * nodo.factor
+            self._validar_escala(nueva)
+            entrada.escala = nueva
+
+    # ── Utilidades de validación ──────────────────────────────────────────────
+    def _expandir_ids(self, id: str) -> List[EntradaFigura]:
+        """
+        Devuelve [miembro1, miembro2, ...] si id es un grupo activo,
+        o [figura] si es una figura individual.
+        Lanza M001/M005 si el ID no existe o está eliminado.
+        """
+        entrada = self._obtener_activa(id)  # M001 / M005
+        if entrada.tipo == "group":
+            return [self._obtener_activa(mid) for mid in (entrada.grupo_ids or [])]
+        return [entrada]
     def _obtener_activa(self, id: str) -> EntradaFigura:
         """M001 si no existe; M005 si está eliminada."""
         entrada = self._tabla.obtener(id)

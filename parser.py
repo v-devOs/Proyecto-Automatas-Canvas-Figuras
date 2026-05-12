@@ -10,6 +10,8 @@ Gramática implementada:
   <programa>          ::= { <comando> }
   <comando>           ::= <create> | <update> | <delete> | <show>
                         | <hide>   | <list>   | <clear>  | <help>
+                        | <rotate> | <move>   | <copy>   | <group>
+                        | <ungroup>| <scale>
   <create>            ::= "create" <tipo_figura>
                         | "create" <tipo_figura> "(" <parametros> ")"
   <update>            ::= "update" <identificador> "(" <parametros_update> ")"
@@ -19,6 +21,12 @@ Gramática implementada:
   <list>              ::= "list"
   <clear>             ::= "clear" "screen"
   <help>              ::= "help"
+  <rotate>            ::= "rotate" <identificador> "(" NUM_DEC ")"
+  <move>              ::= "move"   <identificador> "(" NUM_DEC "," NUM_DEC ")"
+  <copy>              ::= "copy"   <identificador>
+  <group>             ::= "group"  <identificador> { <identificador> }
+  <ungroup>           ::= "ungroup" <identificador>
+  <scale>             ::= "scale"  <identificador> "(" NUM_DEC ")"
   <parametros>        ::= <color> "," <escala> "," <posicion>
   <parametros_update> ::= <valor_update> "," <valor_update> "," <valor_update>
   <valor_update>      ::= <color> | <escala> | <posicion> | "_"
@@ -36,6 +44,7 @@ from ast_nodes import (
     ProgramaNode, ComandoNode,
     CreateNode, UpdateNode, DeleteNode,
     ShowNode, HideNode, ListNode, ClearNode, HelpNode, RotateNode,
+    MoveNode, CopyNode, GroupNode, UngroupNode, ScaleNode,
     ParametrosNode, ParametrosLineaNode, ParametrosUpdateNode, ParametrosUpdateLineaNode,
     ValorUpdateNode, PosicionNode,
 )
@@ -81,7 +90,8 @@ _SUGERENCIAS_TIPO: Dict[TipoToken, str] = {
 }
 
 _SUGERENCIA_COMANDOS = (
-    "Comandos válidos: create  update  delete  show  hide  list  clear screen  help"
+    "Comandos válidos: create  update  delete  show  hide  list  clear screen  help  "
+    "rotate  move  copy  group  ungroup  scale"
 )
 
 
@@ -107,15 +117,20 @@ class Parser:
         self.errores: List[ErrorSintactico] = []
         # ── Tabla de despacho de comandos (lookahead LL(1)) ───────────────────
         self._DISPATCH = {
-            "create": self._parse_create,
-            "update": self._parse_update,
-            "delete": self._parse_delete,
-            "show":   self._parse_show,
-            "hide":   self._parse_hide,
-            "list":   self._parse_list,
-            "clear":  self._parse_clear,
-            "help":   self._parse_help,
-            "rotate": self._parse_rotate,
+            "create":  self._parse_create,
+            "update":  self._parse_update,
+            "delete":  self._parse_delete,
+            "show":    self._parse_show,
+            "hide":    self._parse_hide,
+            "list":    self._parse_list,
+            "clear":   self._parse_clear,
+            "help":    self._parse_help,
+            "rotate":  self._parse_rotate,
+            "move":    self._parse_move,
+            "copy":    self._parse_copy,
+            "group":   self._parse_group,
+            "ungroup": self._parse_ungroup,
+            "scale":   self._parse_scale,
         }
 
     # ── Utilidades ────────────────────────────────────────────────────────────
@@ -289,7 +304,54 @@ class Parser:
         grados_tok = self.match(TipoToken.NUM_DEC)
         self.match(TipoToken.RPAREN)
         return RotateNode(id=id_tok.lexema, grados=int(grados_tok.lexema))
+    def _parse_move(self) -> MoveNode:
+        """<move> ::= "move" <identificador> "(" NUM_DEC "," NUM_DEC ")" """
+        self._match_lexema(TipoToken.PALABRA_RESERVADA, "move")
+        id_tok = self.match(TipoToken.IDENTIFICADOR)
+        self.match(TipoToken.LPAREN)
+        dx_tok = self.match(TipoToken.NUM_DEC)
+        self.match(TipoToken.COMMA)
+        dy_tok = self.match(TipoToken.NUM_DEC)
+        self.match(TipoToken.RPAREN)
+        return MoveNode(id=id_tok.lexema, dx=int(dx_tok.lexema), dy=int(dy_tok.lexema))
 
+    def _parse_copy(self) -> CopyNode:
+        """<copy> ::= "copy" <identificador>"""
+        self._match_lexema(TipoToken.PALABRA_RESERVADA, "copy")
+        id_tok = self.match(TipoToken.IDENTIFICADOR)
+        return CopyNode(id=id_tok.lexema)
+
+    def _parse_group(self) -> GroupNode:
+        """<group> ::= "group" <identificador> { <identificador> }"""
+        self._match_lexema(TipoToken.PALABRA_RESERVADA, "group")
+        ids: List[str] = []
+        while self._lookahead() == TipoToken.IDENTIFICADOR:
+            ids.append(self._actual.lexema)
+            self._pos += 1
+        if len(ids) < 2:
+            tok = self._actual
+            raise ErrorSintactico(
+                "S002",
+                "group requiere al menos dos identificadores",
+                tok.linea, tok.columna,
+                sugerencia="Ej: group circle0001 square0001",
+            )
+        return GroupNode(ids=ids)
+
+    def _parse_ungroup(self) -> UngroupNode:
+        """<ungroup> ::= "ungroup" <identificador>"""
+        self._match_lexema(TipoToken.PALABRA_RESERVADA, "ungroup")
+        id_tok = self.match(TipoToken.IDENTIFICADOR)
+        return UngroupNode(id=id_tok.lexema)
+
+    def _parse_scale(self) -> ScaleNode:
+        """<scale> ::= "scale" <identificador> "(" NUM_DEC ")" """
+        self._match_lexema(TipoToken.PALABRA_RESERVADA, "scale")
+        id_tok     = self.match(TipoToken.IDENTIFICADOR)
+        self.match(TipoToken.LPAREN)
+        factor_tok = self.match(TipoToken.NUM_DEC)
+        self.match(TipoToken.RPAREN)
+        return ScaleNode(id=id_tok.lexema, factor=int(factor_tok.lexema))
     # ── No-terminales: parámetros ─────────────────────────────────────────────
 
     def _parse_parametros_linea(self) -> ParametrosLineaNode:

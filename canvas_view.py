@@ -464,6 +464,7 @@ class CanvasView:
         from ast_nodes import (
             ProgramaNode, CreateNode, UpdateNode, DeleteNode,
             ShowNode, HideNode, ListNode, ClearNode, HelpNode,
+            RotateNode, MoveNode, CopyNode, GroupNode, UngroupNode, ScaleNode,
             ParametrosNode, ParametrosUpdateNode, ValorUpdateNode, PosicionNode,
         )
 
@@ -522,6 +523,39 @@ class CanvasView:
 
         elif isinstance(nodo, HelpNode):
             line("HelpNode", "node")
+
+        elif isinstance(nodo, RotateNode):
+            line("RotateNode", "node")
+            field_val("id",     nodo.id)
+            field_val("grados", str(nodo.grados))
+
+        elif isinstance(nodo, MoveNode):
+            line("MoveNode", "node")
+            field_val("id", nodo.id)
+            field_val("dx", f"{nodo.dx:+d}")
+            field_val("dy", f"{nodo.dy:+d}")
+
+        elif isinstance(nodo, CopyNode):
+            line("CopyNode", "node")
+            field_val("id", nodo.id)
+
+        elif isinstance(nodo, GroupNode):
+            line("GroupNode", "node")
+            for i, mid in enumerate(nodo.ids):
+                last_m = (i == len(nodo.ids) - 1)
+                conn2  = "└── " if last_m else "├── "
+                self._txt_append(self._ast_text, child_pre + "    " + conn2, "branch")
+                self._txt_append(self._ast_text, f"id[{i}]: ", "field")
+                self._txt_append(self._ast_text, mid + "\n", "value")
+
+        elif isinstance(nodo, UngroupNode):
+            line("UngroupNode", "node")
+            field_val("id", nodo.id)
+
+        elif isinstance(nodo, ScaleNode):
+            line("ScaleNode", "node")
+            field_val("id",     nodo.id)
+            field_val("factor", f"×{nodo.factor}")
 
         elif isinstance(nodo, ParametrosNode):
             self._txt_append(w, child_pre + "└── ", "branch")
@@ -611,6 +645,9 @@ class CanvasView:
         return out
 
     def _dibujar(self, e: EntradaFigura) -> None:
+        # Los grupos son entidades lógicas; no tienen representación visual propia
+        if e.tipo == "group":
+            return
         cx, cy  = self._to_canvas(*e.posicion)
         sz      = max(e.escala * UNIT, 4)
         outline = OUTLINE_DEF

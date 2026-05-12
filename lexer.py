@@ -193,13 +193,17 @@ _TABLA: Dict[Tuple[Estado, CC], Estado] = {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _RESERVADAS: FrozenSet[str] = frozenset({
-    "create", "update", "delete", "show", "hide",
-    "list",   "clear",  "screen", "help", "rotate",
+    "create", "update", "delete", "show",    "hide",
+    "list",   "clear",  "screen", "help",    "rotate",
+    "move",   "copy",   "group",  "ungroup", "scale",
 })
 
 _TIPOS_FIGURA: FrozenSet[str] = frozenset({
     "circle", "square", "triangle", "line", "pentagon",
 })
+
+# Prefijos válidos para identificadores: tipos de figura + "group" (para group0001)
+_PREFIJOS_VALIDOS: FrozenSet[str] = _TIPOS_FIGURA | frozenset({"group"})
 
 _SYM_TOKEN: Dict[str, TipoToken] = {
     '(': TipoToken.LPAREN,
@@ -371,7 +375,8 @@ class Lexer:
         self.errores.append(ErrorLexico(
             "L001", f"palabra desconocida: {lexema!r}", lin, col,
             sugerencia=(
-                "Palabras reservadas: create update delete show hide list clear screen help. "
+                "Palabras reservadas: create update delete show hide list clear screen help "
+                "rotate move copy group ungroup scale. "
                 "Tipos de figura: circle  square  triangle  line  pentagon"
             ),
             col_fin=col + len(lexema) - 1,
@@ -385,14 +390,14 @@ class Lexer:
         """
         split   = next(i for i, ch in enumerate(lexema) if ch.isdigit())
         prefijo = lexema[:split]
-        if prefijo not in _TIPOS_FIGURA:
+        if prefijo not in _PREFIJOS_VALIDOS:
             self.errores.append(ErrorLexico(
                 "L004",
                 f"prefijo de identificador inválido: {prefijo!r}",
                 lin, col,
                 sugerencia=(
-                    "El prefijo debe ser un tipo de figura válido seguido de 4 dígitos. "
-                    "Ej: circle0001  square0042  triangle0003  line0010  pentagon0001"
+                    "El prefijo debe ser un tipo de figura o 'group' seguido de 4 dígitos. "
+                    "Ej: circle0001  square0042  triangle0003  line0010  pentagon0001  group0001"
                 ),
                 col_fin=col + len(prefijo) - 1,
             ))

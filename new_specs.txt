@@ -1,0 +1,45 @@
+Funcionalidades del lenguaje
+Nuevos comandos:
+
+move <id> (dx, dy) — desplazamiento relativo (actualmente solo hay posición absoluta con update)
+copy <id> — duplicar una figura existente con un nuevo ID
+group <id1> <id2> ... / ungroup <gid> — agrupar figuras para moverlas/rotarlas juntas
+scale <id> (factor) — escalar de forma relativa en lugar de absoluta
+Nuevos tipos de figura:
+
+rectangle con parámetros de ancho y alto independientes
+ellipse con radio horizontal y vertical
+text — colocar texto en el canvas
+
+
+Expresiones en parámetros:
+
+Valores negativos: create circle("red", 2, [-5, 10])
+Decimales: create circle("red", 1.5, [0, 0])
+Variables: set x 10 + create circle("red", 2, [x, y])
+Lenguaje / Lexer-Parser
+Comentarios (// o #) — la spec explícitamente los excluye, sería natural añadirlos
+Múltiples comandos por línea separados por ;
+Carga desde archivo — ejecutar un script .fig completo con run archivo.fig
+Historial persistente — guardar/cargar el historial de comandos entre sesiones (actualmente se pierde al cerrar)
+Análisis semántico
+Verificación de colores — actualmente cualquier string pasa como color válido; se podría validar contra una lista de nombres CSS o formato hex estricto
+Límites del canvas — advertir (warning) si la figura queda fuera del área visible
+Solapamiento — detectar figuras completamente superpuestas y advertirlo
+Visualización / Canvas
+Selección interactiva — hacer clic en una figura en el canvas para seleccionarla y ver/editar sus propiedades
+Arrastrar figuras — mover figuras con drag & drop directamente en el canvas
+Zoom y pan — escalar y desplazar el canvas con rueda del ratón
+Exportar — guardar el canvas como imagen PNG/SVG
+Animaciones — animate <id> move (dx, dy) steps 10 para transiciones suaves
+Consola e interfaz
+Autocompletado con Tab — sugerir IDs existentes, tipos de figura y comandos
+Resaltado de sintaxis en el Entry de entrada mientras se escribe
+Deshacer/rehacer — undo / redo para revertir el último comando
+Panel de propiedades — al seleccionar una figura mostrar un panel lateral con sus atributos editables
+Calidad de código / ingeniería
+Persistencia — serializar/deserializar la TablaSimbolos a JSON para guardar y cargar sesiones
+Tests unitarios — el diseño modular ya facilita probar cada fase por separado (pytest)
+Números de línea en el historial AST — actualmente los nodos AST no conservan columnas, útil para debuggear
+Modo verbose — flag que muestre el pipeline completo (tokens + AST + semántico) por cada comando
+Claude Sonnet 4.6 • 1x

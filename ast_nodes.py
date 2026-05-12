@@ -140,13 +140,47 @@ class RotateNode:
     grados: int
 
 
+@dataclass
+class MoveNode:
+    """Desplazamiento relativo: move <id> (dx, dy)"""
+    id: str
+    dx: int
+    dy: int
+
+
+@dataclass
+class CopyNode:
+    """Duplicar figura: copy <id>"""
+    id: str   # ID de la figura fuente
+
+
+@dataclass
+class GroupNode:
+    """Agrupar figuras: group <id1> <id2> ..."""
+    ids: List[str]   # IDs de figuras a agrupar (mínimo 2)
+
+
+@dataclass
+class UngroupNode:
+    """Disolver grupo: ungroup <gid>"""
+    id: str   # ID del grupo
+
+
+@dataclass
+class ScaleNode:
+    """Escalar de forma relativa: scale <id> (factor)"""
+    id:     str
+    factor: int   # multiplicador relativo (> 0); nueva_escala = escala_actual * factor
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # NODO RAÍZ
 # ═══════════════════════════════════════════════════════════════════════════════
 
 ComandoNode = Union[
     CreateNode, UpdateNode, DeleteNode,
-    ShowNode, HideNode, ListNode, ClearNode, HelpNode, RotateNode,
+    ShowNode, HideNode, ListNode, ClearNode, HelpNode,
+    RotateNode, MoveNode, CopyNode, GroupNode, UngroupNode, ScaleNode,
 ]
 
 

@@ -23,10 +23,14 @@ class EntradaFigura:
     posicion:  Tuple[int, int]
     visible:   bool = True
     eliminada: bool = False
-    pos_fin:   Optional[Tuple[int, int]] = None   # solo para type=="line"
+    pos_fin:   Optional[Tuple[int, int]] = None   # solo para tipo=="line"
     rotacion:  int  = 0                           # grados acumulados
+    grupo_ids: Optional[List[str]] = None         # solo para tipo=="group"
 
     def __repr__(self) -> str:
+        if self.tipo == "group":
+            miembros = ", ".join(self.grupo_ids or [])
+            return f"EntradaFigura(id={self.id!r}, tipo='group', miembros=[{miembros}])"
         estado = "ELIMINADA" if self.eliminada else ("oculta" if not self.visible else "visible")
         return (
             f"EntradaFigura(id={self.id!r}, tipo={self.tipo!r}, "
