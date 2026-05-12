@@ -47,12 +47,24 @@ class Executor:
         figs = [e for e in self._tabla.listar() if e.tipo == tipo and not e.eliminada]
         if figs:
             e = figs[-1]
-            self._write(f"  OK: {e.id}  (color={e.color}, escala={e.escala}, pos={list(e.posicion)})", "ok")
+            if e.pos_fin is not None:
+                self._write(
+                    f"  OK: {e.id}  (color={e.color}, "
+                    f"inicio={list(e.posicion)}, fin={list(e.pos_fin)})", "ok")
+            else:
+                self._write(
+                    f"  OK: {e.id}  (color={e.color}, escala={e.escala}, pos={list(e.posicion)})", "ok")
 
     def _exec_update(self, nodo: UpdateNode) -> None:
         e = self._tabla.obtener(nodo.id)
         if e:
-            self._write(f"  OK: {e.id}  (color={e.color}, escala={e.escala}, pos={list(e.posicion)})", "ok")
+            if e.pos_fin is not None:
+                self._write(
+                    f"  OK: {e.id}  (color={e.color}, "
+                    f"inicio={list(e.posicion)}, fin={list(e.pos_fin)})", "ok")
+            else:
+                self._write(
+                    f"  OK: {e.id}  (color={e.color}, escala={e.escala}, pos={list(e.posicion)})", "ok")
 
     def _exec_delete(self, nodo: DeleteNode) -> None:
         self._write(f"  OK: {nodo.id} eliminado", "ok")
@@ -68,13 +80,20 @@ class Executor:
         if not figs:
             self._write("  (no hay figuras activas)", "info")
             return
-        self._write(f"  {'ID':<16} {'TIPO':<10} {'COLOR':<10} {'ESC':<4} {'POS':<12} VIS", "info")
+        self._write(f"  {'ID':<16} {'TIPO':<10} {'COLOR':<10} {'ESC':<4} {'POS / INICIO':<14} {'FIN':<12} VIS", "info")
         for e in figs:
-            self._write(
-                f"  {e.id:<16} {e.tipo:<10} {e.color:<10} {e.escala:<4} "
-                f"{str(list(e.posicion)):<12} {'si' if e.visible else 'no'}",
-                "ok" if e.visible else "warn",
-            )
+            if e.pos_fin is not None:
+                self._write(
+                    f"  {e.id:<16} {e.tipo:<10} {e.color:<10} {'—':<4} "
+                    f"{str(list(e.posicion)):<14} {str(list(e.pos_fin)):<12} {'si' if e.visible else 'no'}",
+                    "ok" if e.visible else "warn",
+                )
+            else:
+                self._write(
+                    f"  {e.id:<16} {e.tipo:<10} {e.color:<10} {e.escala:<4} "
+                    f"{str(list(e.posicion)):<14} {'—':<12} {'si' if e.visible else 'no'}",
+                    "ok" if e.visible else "warn",
+                )
 
     def _exec_clear(self, _) -> None:
         self._write("  OK: tabla vaciada", "ok")
@@ -82,9 +101,11 @@ class Executor:
     def _exec_help(self, _) -> None:
         for ln in [
             "  Comandos disponibles:",
-            "    create <tipo>                      crea figura con valores por defecto",
-            "    create <tipo>(color,escala,[x,y])  crea con parámetros",
-            "    update <id>(_|color,_|esc,_|pos)   modifica uno o más campos",
+            "    create <tipo>                          crea figura con valores por defecto",
+            "    create <tipo>(color,escala,[x,y])       crea con parámetros",
+            "    create line(color,[x1,y1],[x2,y2])      línea entre dos puntos",
+            "    update <id>(_|color,_|esc,_|pos)        modifica uno o más campos",
+            "    update <line_id>(_|color,[x1,y1],[x2,y2])  modifica línea",
             "    delete <id>    elimina figura",
             "    show   <id>    hace visible         hide <id>    oculta",
             "    list           lista figuras         clear screen  vacía",

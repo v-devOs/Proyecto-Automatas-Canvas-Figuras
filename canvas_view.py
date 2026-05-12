@@ -618,11 +618,15 @@ class CanvasView:
 
         elif e.tipo == "line":
             color_linea = _parse_color(e.color, e.tipo) if e.visible else "#585b70"
-            kw_line = dict(fill=color_linea, width=max(3, e.escala * 2))
+            kw_line = dict(fill=color_linea, width=max(2, e.escala * 2))
             if dash:
                 kw_line["dash"] = dash
-            items.append(self._canvas.create_line(
-                cx - sz, cy, cx + sz, cy, **kw_line))
+            if e.pos_fin is not None:
+                cx2, cy2 = self._to_canvas(*e.pos_fin)
+                items.append(self._canvas.create_line(cx, cy, cx2, cy2, **kw_line))
+            else:
+                items.append(self._canvas.create_line(
+                    cx - sz, cy, cx + sz, cy, **kw_line))
 
         elif e.tipo == "pentagon":
             pts: List[float] = []
@@ -635,8 +639,15 @@ class CanvasView:
             items.append(iid)
 
         # Etiqueta con el id de la figura
+        if e.tipo == "line" and e.pos_fin is not None:
+            cx2, cy2 = self._to_canvas(*e.pos_fin)
+            lbl_x = (cx + cx2) // 2
+            lbl_y = (cy + cy2) // 2 - 10
+        else:
+            lbl_x = cx
+            lbl_y = cy + sz + 14
         items.append(self._canvas.create_text(
-            cx, cy + sz + 14,
+            lbl_x, lbl_y,
             text=e.id,
             fill=LABEL_FG,
             font=("Consolas", 8, "bold"),

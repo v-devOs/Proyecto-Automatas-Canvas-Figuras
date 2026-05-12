@@ -23,6 +23,7 @@ class EntradaFigura:
     posicion:  Tuple[int, int]
     visible:   bool = True
     eliminada: bool = False
+    pos_fin:   Optional[Tuple[int, int]] = None   # solo para type=="line"
 
     def __repr__(self) -> str:
         estado = "ELIMINADA" if self.eliminada else ("oculta" if not self.visible else "visible")

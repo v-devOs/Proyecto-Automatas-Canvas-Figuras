@@ -36,7 +36,7 @@ from ast_nodes import (
     ProgramaNode, ComandoNode,
     CreateNode, UpdateNode, DeleteNode,
     ShowNode, HideNode, ListNode, ClearNode, HelpNode,
-    ParametrosNode, ParametrosUpdateNode,
+    ParametrosNode, ParametrosLineaNode, ParametrosUpdateNode,
     ValorUpdateNode, PosicionNode,
 )
 
@@ -212,6 +212,9 @@ class Parser:
         """
         <create> ::= "create" <tipo_figura>
                    | "create" <tipo_figura> "(" <parametros> ")"
+                   | "create" "line" "(" <parametros_linea> ")"
+
+        Para 'line' los parámetros son: <color> "," <posicion> "," <posicion>
         """
         self._match_lexema(TipoToken.PALABRA_RESERVADA, "create")
         tipo_tok    = self.match(TipoToken.TIPO_FIGURA)
@@ -219,7 +222,10 @@ class Parser:
 
         if self._lookahead() == TipoToken.LPAREN:
             self.match(TipoToken.LPAREN)
-            params = self._parse_parametros()
+            if tipo_figura == "line":
+                params = self._parse_parametros_linea()
+            else:
+                params = self._parse_parametros()
             self.match(TipoToken.RPAREN)
             return CreateNode(tipo_figura=tipo_figura, parametros=params)
 
@@ -269,6 +275,15 @@ class Parser:
         return HelpNode()
 
     # ── No-terminales: parámetros ─────────────────────────────────────────────
+
+    def _parse_parametros_linea(self) -> ParametrosLineaNode:
+        """<parametros_linea> ::= <color> "," <posicion> "," <posicion>"""
+        color  = self._parse_color()
+        self.match(TipoToken.COMMA)
+        inicio = self._parse_posicion()
+        self.match(TipoToken.COMMA)
+        fin    = self._parse_posicion()
+        return ParametrosLineaNode(color=color, inicio=inicio, fin=fin)
 
     def _parse_parametros(self) -> ParametrosNode:
         """<parametros> ::= <color> "," <escala> "," <posicion>"""

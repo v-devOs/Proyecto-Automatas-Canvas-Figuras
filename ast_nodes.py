@@ -55,6 +55,14 @@ class ParametrosNode:
 
 
 @dataclass
+class ParametrosLineaNode:
+    """Parámetros de create line: color, punto de inicio y punto de fin."""
+    color:  str
+    inicio: PosicionNode
+    fin:    PosicionNode
+
+
+@dataclass
 class ParametrosUpdateNode:
     """
     Tres slots posicionales de un update.
@@ -74,7 +82,7 @@ class ParametrosUpdateNode:
 @dataclass
 class CreateNode:
     tipo_figura: str
-    parametros:  Optional[ParametrosNode] = None
+    parametros:  Optional[Union[ParametrosNode, "ParametrosLineaNode"]] = None
 
 
 @dataclass

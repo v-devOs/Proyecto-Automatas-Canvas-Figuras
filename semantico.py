@@ -26,13 +26,13 @@ Valores por defecto de create sin parámetros:
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from ast_nodes import (
     ProgramaNode, ComandoNode,
     CreateNode, UpdateNode, DeleteNode,
     ShowNode, HideNode, ListNode, ClearNode, HelpNode,
-    ParametrosUpdateNode, ValorUpdateNode,
+    ParametrosLineaNode, ParametrosUpdateNode, ValorUpdateNode,
 )
 from tabla_simbolos import EntradaFigura, TablaSimbolos
 
@@ -130,7 +130,13 @@ class AnalizadorSemantico:
             )
 
         # Resolver parámetros (con valores por defecto si no se proporcionaron)
-        if nodo.parametros:
+        pos_fin: Optional[Tuple[int, int]] = None
+        if isinstance(nodo.parametros, ParametrosLineaNode):
+            color    = nodo.parametros.color
+            escala   = _DEFAULT_ESCALA          # grosor por defecto
+            posicion = (nodo.parametros.inicio.x, nodo.parametros.inicio.y)
+            pos_fin  = (nodo.parametros.fin.x,    nodo.parametros.fin.y)
+        elif nodo.parametros:
             color    = nodo.parametros.color
             escala   = nodo.parametros.escala
             posicion = (nodo.parametros.posicion.x, nodo.parametros.posicion.y)
@@ -148,6 +154,7 @@ class AnalizadorSemantico:
             color    = color,
             escala   = escala,
             posicion = posicion,
+            pos_fin  = pos_fin,
         ))
 
     # ── update ────────────────────────────────────────────────────────────────
@@ -157,22 +164,36 @@ class AnalizadorSemantico:
 
         params = nodo.parametros
 
-        # M003: validar que cada slot tenga el tipo correcto o sea wildcard
-        self._validar_slot(params.color,    esperado="color",    slot=1)
-        self._validar_slot(params.escala,   esperado="escala",   slot=2)
-        self._validar_slot(params.posicion, esperado="posicion", slot=3)
+        if entrada.tipo == "line" and entrada.pos_fin is not None:
+            # Para líneas con dos puntos: (color, inicio, fin)
+            # Slot 2 y 3 esperan posicion (o wildcard) en lugar de escala/posicion
+            self._validar_slot(params.color,    esperado="color",    slot=1)
+            self._validar_slot(params.escala,   esperado="posicion", slot=2)
+            self._validar_slot(params.posicion, esperado="posicion", slot=3)
 
-        # Resolver nuevos valores (wildcard → conservar existente)
-        nuevo_color    = self._resolver_color(params.color,       entrada.color)
-        nuevo_escala   = self._resolver_escala(params.escala,     entrada.escala)
-        nuevo_posicion = self._resolver_posicion(params.posicion, entrada.posicion)
+            nuevo_color  = self._resolver_color(params.color,    entrada.color)
+            nuevo_inicio = self._resolver_posicion(params.escala,    entrada.posicion)
+            nuevo_fin    = self._resolver_posicion(params.posicion,  entrada.pos_fin)
 
-        # M004: escala resultante debe ser > 0
-        self._validar_escala(nuevo_escala)
+            entrada.color    = nuevo_color
+            entrada.posicion = nuevo_inicio
+            entrada.pos_fin  = nuevo_fin
+        else:
+            # Resto de figuras: (color, escala, posicion)
+            self._validar_slot(params.color,    esperado="color",    slot=1)
+            self._validar_slot(params.escala,   esperado="escala",   slot=2)
+            self._validar_slot(params.posicion, esperado="posicion", slot=3)
 
-        entrada.color    = nuevo_color
-        entrada.escala   = nuevo_escala
-        entrada.posicion = nuevo_posicion
+            nuevo_color    = self._resolver_color(params.color,       entrada.color)
+            nuevo_escala   = self._resolver_escala(params.escala,     entrada.escala)
+            nuevo_posicion = self._resolver_posicion(params.posicion, entrada.posicion)
+
+            # M004: escala resultante debe ser > 0
+            self._validar_escala(nuevo_escala)
+
+            entrada.color    = nuevo_color
+            entrada.escala   = nuevo_escala
+            entrada.posicion = nuevo_posicion
 
     # ── delete ────────────────────────────────────────────────────────────────
 
