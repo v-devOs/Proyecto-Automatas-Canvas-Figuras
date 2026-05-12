@@ -176,6 +176,8 @@ class CanvasView:
         self._cmd_callback = None
         self._items: Dict[str, List[int]] = {}
         self._cmd_count = 0
+        self._history:  List[str] = []   # últimos 10 comandos ejecutados
+        self._hist_idx: int = -1         # -1 = no estamos navegando
 
     # ═══════════════════════════════════════════════════════════════════════════
     # PESTAÑA HISTORIAL — construcción
@@ -711,6 +713,8 @@ class CanvasView:
         )
         self._entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8), pady=4)
         self._entry.bind("<Return>", self._on_enter)
+        self._entry.bind("<Up>",     self._on_history_up)
+        self._entry.bind("<Down>",   self._on_history_down)
         self._entry.focus_force()
 
     def write_console(self, text: str, tag: str = "") -> None:
@@ -727,6 +731,31 @@ class CanvasView:
         """Registra la función que se llama al presionar Enter en la consola."""
         self._cmd_callback = fn
 
+    def _on_history_up(self, event=None) -> str:
+        """Sube en el historial (comando más reciente primero)."""
+        if not self._history:
+            return "break"
+        if self._hist_idx < len(self._history) - 1:
+            self._hist_idx += 1
+        self._set_entry(self._history[self._hist_idx])
+        return "break"
+
+    def _on_history_down(self, event=None) -> str:
+        """Baja en el historial; llega a vacío al pasar del más reciente."""
+        if self._hist_idx <= 0:
+            self._hist_idx = -1
+            self._set_entry("")
+        else:
+            self._hist_idx -= 1
+            self._set_entry(self._history[self._hist_idx])
+        return "break"
+
+    def _set_entry(self, text: str) -> None:
+        """Reemplaza el contenido del Entry y mueve el cursor al final."""
+        self._entry.delete(0, tk.END)
+        self._entry.insert(0, text)
+        self._entry.icursor(tk.END)
+
     def _on_enter(self, event=None) -> None:
         """Procesa la línea al presionar Enter; devuelve el foco al Entry."""
         try:
@@ -734,6 +763,12 @@ class CanvasView:
             if not cmd:
                 return
             self._entry.delete(0, tk.END)
+            # Guardar en historial (máx 5, sin duplicados consecutivos)
+            if not self._history or self._history[0] != cmd:
+                self._history.insert(0, cmd)
+                if len(self._history) > 10:
+                    self._history.pop()
+            self._hist_idx = -1
             if self._cmd_callback:
                 self._cmd_callback(cmd)
         except Exception as e:
