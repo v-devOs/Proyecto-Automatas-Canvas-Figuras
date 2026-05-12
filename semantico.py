@@ -41,6 +41,8 @@ from ast_nodes import (
     ShowNode, HideNode, ListNode, ClearNode, HelpNode, RotateNode,
     MoveNode, CopyNode, GroupNode, UngroupNode, ScaleNode,
     ParametrosLineaNode, ParametrosUpdateNode, ParametrosUpdateLineaNode, ValorUpdateNode,
+    ParametrosRectanguloNode, ParametrosElipseNode, ParametrosTextoNode,
+    ParametrosUpdateRectanguloNode, ParametrosUpdateElipseNode, ParametrosUpdateTextoNode,
 )
 from tabla_simbolos import EntradaFigura, TablaSimbolos
 
@@ -147,7 +149,10 @@ class AnalizadorSemantico:
             )
 
         # Resolver parámetros (con valores por defecto si no se proporcionaron)
-        pos_fin: Optional[Tuple[int, int]] = None
+        pos_fin:     Optional[Tuple[int, int]] = None
+        param_extra: Optional[int]             = None
+        contenido:   Optional[str]             = None
+
         if isinstance(nodo.parametros, ParametrosLineaNode):
             color    = nodo.parametros.color
             escala   = nodo.parametros.grosor
@@ -159,25 +164,51 @@ class AnalizadorSemantico:
                 "create line requiere color, grosor, inicio y fin",
                 sugerencia='Ej: create line("rojo", 2, [0,0], [5,5])',
             )
+        elif isinstance(nodo.parametros, ParametrosRectanguloNode):
+            color       = nodo.parametros.color
+            escala      = nodo.parametros.ancho
+            param_extra = nodo.parametros.alto
+            posicion    = (nodo.parametros.posicion.x, nodo.parametros.posicion.y)
+            self._validar_escala(param_extra)
+        elif isinstance(nodo.parametros, ParametrosElipseNode):
+            color       = nodo.parametros.color
+            escala      = nodo.parametros.rx
+            param_extra = nodo.parametros.ry
+            posicion    = (nodo.parametros.posicion.x, nodo.parametros.posicion.y)
+            self._validar_escala(param_extra)
+        elif isinstance(nodo.parametros, ParametrosTextoNode):
+            color     = nodo.parametros.color
+            escala    = nodo.parametros.tamanio
+            posicion  = (nodo.parametros.posicion.x, nodo.parametros.posicion.y)
+            contenido = nodo.parametros.contenido
         elif nodo.parametros:
-            color    = nodo.parametros.color
-            escala   = nodo.parametros.escala
-            posicion = (nodo.parametros.posicion.x, nodo.parametros.posicion.y)
+            color    = nodo.parametros.color   # type: ignore[union-attr]
+            escala   = nodo.parametros.escala  # type: ignore[union-attr]
+            posicion = (nodo.parametros.posicion.x, nodo.parametros.posicion.y)  # type: ignore[union-attr]
         else:
             color    = _DEFAULT_COLOR
             escala   = _DEFAULT_ESCALA
             posicion = _DEFAULT_POSICION
+            # Valores por defecto para nuevos tipos sin parámetros
+            if nodo.tipo_figura == "rectangle":
+                param_extra = _DEFAULT_ESCALA
+            elif nodo.tipo_figura == "ellipse":
+                param_extra = _DEFAULT_ESCALA
+            elif nodo.tipo_figura == "text":
+                contenido = '"texto"'
 
         # M004: escala debe ser > 0
         self._validar_escala(escala)
 
         self._tabla.insertar(EntradaFigura(
-            id       = nuevo_id,
-            tipo     = nodo.tipo_figura,
-            color    = color,
-            escala   = escala,
-            posicion = posicion,
-            pos_fin  = pos_fin,
+            id          = nuevo_id,
+            tipo        = nodo.tipo_figura,
+            color       = color,
+            escala      = escala,
+            posicion    = posicion,
+            pos_fin     = pos_fin,
+            param_extra = param_extra,
+            contenido   = contenido,
         ))
 
     # ── update ────────────────────────────────────────────────────────────────
@@ -211,6 +242,74 @@ class AnalizadorSemantico:
             entrada.escala   = nuevo_grosor
             entrada.posicion = nuevo_inicio
             entrada.pos_fin  = nuevo_fin
+
+        elif isinstance(params, ParametrosUpdateRectanguloNode):
+            # Rectangle: (color, ancho, alto, posicion)
+            self._validar_slot(params.color,    esperado="color",    slot=1)
+            self._validar_slot(params.ancho,    esperado="escala",   slot=2)
+            self._validar_slot(params.alto,     esperado="escala",   slot=3)
+            self._validar_slot(params.posicion, esperado="posicion", slot=4)
+
+            nuevo_color  = self._resolver_color(params.color,    entrada.color)
+            nuevo_ancho  = self._resolver_escala(params.ancho,   entrada.escala)
+            nuevo_alto   = self._resolver_escala(params.alto,    entrada.param_extra or 1)
+            nuevo_pos    = self._resolver_posicion(params.posicion, entrada.posicion)
+
+            self._validar_escala(nuevo_ancho)
+            self._validar_escala(nuevo_alto)
+
+            entrada.color       = nuevo_color
+            entrada.escala      = nuevo_ancho
+            entrada.param_extra = nuevo_alto
+            entrada.posicion    = nuevo_pos
+
+        elif isinstance(params, ParametrosUpdateElipseNode):
+            # Ellipse: (color, rx, ry, posicion)
+            self._validar_slot(params.color,    esperado="color",    slot=1)
+            self._validar_slot(params.rx,       esperado="escala",   slot=2)
+            self._validar_slot(params.ry,       esperado="escala",   slot=3)
+            self._validar_slot(params.posicion, esperado="posicion", slot=4)
+
+            nuevo_color  = self._resolver_color(params.color,    entrada.color)
+            nuevo_rx     = self._resolver_escala(params.rx,      entrada.escala)
+            nuevo_ry     = self._resolver_escala(params.ry,      entrada.param_extra or 1)
+            nuevo_pos    = self._resolver_posicion(params.posicion, entrada.posicion)
+
+            self._validar_escala(nuevo_rx)
+            self._validar_escala(nuevo_ry)
+
+            entrada.color       = nuevo_color
+            entrada.escala      = nuevo_rx
+            entrada.param_extra = nuevo_ry
+            entrada.posicion    = nuevo_pos
+
+        elif isinstance(params, ParametrosUpdateTextoNode):
+            # Text: (color, tamaño, posicion, contenido)
+            self._validar_slot(params.color,    esperado="color",    slot=1)
+            self._validar_slot(params.tamanio,  esperado="escala",   slot=2)
+            self._validar_slot(params.posicion, esperado="posicion", slot=3)
+            if params.contenido.tipo not in ("contenido", "wildcard"):
+                raise ErrorSemantico(
+                    "M003",
+                    f"slot 4 espera contenido (STRING) o '_', se obtuvo {params.contenido.tipo!r}",
+                    sugerencia='Usa un string "Hola" o _ para conservar el texto actual',
+                )
+
+            nuevo_color     = self._resolver_color(params.color,    entrada.color)
+            nuevo_tamanio   = self._resolver_escala(params.tamanio, entrada.escala)
+            nuevo_pos       = self._resolver_posicion(params.posicion, entrada.posicion)
+            nuevo_contenido = (
+                entrada.contenido if params.contenido.tipo == "wildcard"
+                else str(params.contenido.valor)
+            )
+
+            self._validar_escala(nuevo_tamanio)
+
+            entrada.color     = nuevo_color
+            entrada.escala    = nuevo_tamanio
+            entrada.posicion  = nuevo_pos
+            entrada.contenido = nuevo_contenido
+
         else:
             # Resto de figuras: (color, escala, posicion)
             self._validar_slot(params.color,    esperado="color",    slot=1)
@@ -292,13 +391,15 @@ class AnalizadorSemantico:
         nuevo_id = self._tabla.siguiente_id(origen.tipo)
         from tabla_simbolos import EntradaFigura
         self._tabla.insertar(EntradaFigura(
-            id       = nuevo_id,
-            tipo     = origen.tipo,
-            color    = origen.color,
-            escala   = origen.escala,
-            posicion = origen.posicion,
-            pos_fin  = origen.pos_fin,
-            rotacion = origen.rotacion,
+            id          = nuevo_id,
+            tipo        = origen.tipo,
+            color       = origen.color,
+            escala      = origen.escala,
+            posicion    = origen.posicion,
+            pos_fin     = origen.pos_fin,
+            rotacion    = origen.rotacion,
+            param_extra = origen.param_extra,
+            contenido   = origen.contenido,
         ))
 
     # ── group ────────────────────────────────────────────────────────────────────
@@ -351,6 +452,11 @@ class AnalizadorSemantico:
             nueva = entrada.escala * nodo.factor
             self._validar_escala(nueva)
             entrada.escala = nueva
+            # Si es rectangle o ellipse, escalar la segunda dimensión también
+            if entrada.param_extra is not None:
+                nueva_extra = entrada.param_extra * nodo.factor
+                self._validar_escala(nueva_extra)
+                entrada.param_extra = nueva_extra
 
     # ── Utilidades de validación ──────────────────────────────────────────────
     def _expandir_ids(self, id: str) -> List[EntradaFigura]:

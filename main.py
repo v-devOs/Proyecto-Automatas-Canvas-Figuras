@@ -58,6 +58,18 @@ class Executor:
                 self._write(
                     f"  OK: {e.id}  (color={e.color}, grosor={e.escala}, "
                     f"inicio={list(e.posicion)}, fin={list(e.pos_fin)})", "ok")
+            elif e.tipo == "rectangle":
+                self._write(
+                    f"  OK: {e.id}  (color={e.color}, ancho={e.escala}, "
+                    f"alto={e.param_extra}, pos={list(e.posicion)})", "ok")
+            elif e.tipo == "ellipse":
+                self._write(
+                    f"  OK: {e.id}  (color={e.color}, rx={e.escala}, "
+                    f"ry={e.param_extra}, pos={list(e.posicion)})", "ok")
+            elif e.tipo == "text":
+                self._write(
+                    f"  OK: {e.id}  (color={e.color}, tamaño={e.escala}, "
+                    f"pos={list(e.posicion)}, texto={e.contenido})", "ok")
             else:
                 self._write(
                     f"  OK: {e.id}  (color={e.color}, escala={e.escala}, pos={list(e.posicion)})", "ok")
@@ -69,6 +81,18 @@ class Executor:
                 self._write(
                     f"  OK: {e.id}  (color={e.color}, grosor={e.escala}, "
                     f"inicio={list(e.posicion)}, fin={list(e.pos_fin)})", "ok")
+            elif e.tipo == "rectangle":
+                self._write(
+                    f"  OK: {e.id}  (color={e.color}, ancho={e.escala}, "
+                    f"alto={e.param_extra}, pos={list(e.posicion)})", "ok")
+            elif e.tipo == "ellipse":
+                self._write(
+                    f"  OK: {e.id}  (color={e.color}, rx={e.escala}, "
+                    f"ry={e.param_extra}, pos={list(e.posicion)})", "ok")
+            elif e.tipo == "text":
+                self._write(
+                    f"  OK: {e.id}  (color={e.color}, tamaño={e.escala}, "
+                    f"pos={list(e.posicion)}, texto={e.contenido})", "ok")
             else:
                 self._write(
                     f"  OK: {e.id}  (color={e.color}, escala={e.escala}, pos={list(e.posicion)})", "ok")
@@ -91,21 +115,29 @@ class Executor:
         indiv = [e for e in figs if e.tipo != "group"]
         if indiv:
             self._write(
-                f"  {'ID':<16} {'TIPO':<10} {'COLOR':<10} {'ESC':<4} {'POS / INICIO':<14} {'FIN':<12} {'ROT':<5} VIS", "info")
+                f"  {'ID':<16} {'TIPO':<12} {'COLOR':<10} {'DIM':<12} {'POS / INICIO':<14} {'FIN/TEXTO':<14} {'ROT':<5} VIS", "info")
             for e in indiv:
                 rot = f"{e.rotacion}°"
-                if e.pos_fin is not None:
-                    self._write(
-                        f"  {e.id:<16} {e.tipo:<10} {e.color:<10} {e.escala:<4} "
-                        f"{str(list(e.posicion)):<14} {str(list(e.pos_fin)):<12} {rot:<5} {'si' if e.visible else 'no'}",
-                        "ok" if e.visible else "warn",
-                    )
+                if e.tipo == "rectangle":
+                    dim  = f"{e.escala}×{e.param_extra}"
+                    fin_col = "—"
+                elif e.tipo == "ellipse":
+                    dim  = f"rx={e.escala} ry={e.param_extra}"
+                    fin_col = "—"
+                elif e.tipo == "text":
+                    dim  = f"sz={e.escala}"
+                    fin_col = (e.contenido or "").strip('"')[:12]
+                elif e.pos_fin is not None:
+                    dim  = str(e.escala)
+                    fin_col = str(list(e.pos_fin))
                 else:
-                    self._write(
-                        f"  {e.id:<16} {e.tipo:<10} {e.color:<10} {e.escala:<4} "
-                        f"{str(list(e.posicion)):<14} {'—':<12} {rot:<5} {'si' if e.visible else 'no'}",
-                        "ok" if e.visible else "warn",
-                    )
+                    dim  = str(e.escala)
+                    fin_col = "—"
+                self._write(
+                    f"  {e.id:<16} {e.tipo:<12} {e.color:<10} {dim:<12} "
+                    f"{str(list(e.posicion)):<14} {fin_col:<14} {rot:<5} {'si' if e.visible else 'no'}",
+                    "ok" if e.visible else "warn",
+                )
         # ─ Grupos ──────────────────────────────────────────────────────────
         grupos = [e for e in figs if e.tipo == "group"]
         if grupos:
@@ -175,22 +207,27 @@ class Executor:
     def _exec_help(self, _) -> None:
         for ln in [
             "  Comandos disponibles:",
-            "    create <tipo>                                   crea figura con valores por defecto",
-            "    create <tipo>(color, escala, [x,y])             crea con parámetros",
-            "    create line(color, grosor, [x1,y1], [x2,y2])   línea entre dos puntos",
-            "    update <id>(_|color, _|esc, _|pos)              modifica uno o más campos",
-            "    update <line_id>(_|color, _|grosor, _|p1, _|p2) modifica línea",
-            "    move   <id> (dx, dy)                            desplaza figura o grupo",
-            "    rotate <id> (grados)                            rota figura o grupo",
-            "    scale  <id> (factor)                            escala ×factor figura o grupo",
-            "    copy   <id>                                     duplica figura con nuevo ID",
-            "    group  <id1> <id2> ...                          agrupa figuras",
-            "    ungroup <gid>                                   disuelve el grupo",
+            "    create <tipo>                                    crea figura con valores por defecto",
+            "    create <tipo>(color, escala, [x,y])              crea con parámetros",
+            "    create line(color, grosor, [x1,y1], [x2,y2])    línea entre dos puntos",
+            "    create rectangle(color, ancho, alto, [x,y])     rectángulo con dimensiones independientes",
+            "    create ellipse(color, rx, ry, [x,y])            elipse con radio horizontal y vertical",
+            '    create text(color, tamaño, [x,y], \"contenido\")  texto en el canvas',
+            "    update <id>(_|color, _|esc, _|pos)               modifica uno o más campos",
+            "    update <rect_id>(_|color, _|ancho, _|alto, _|pos)  modifica rectángulo",
+            "    update <ellipse_id>(_|color, _|rx, _|ry, _|pos)   modifica elipse",
+            '    update <text_id>(_|color, _|sz, _|pos, _|\"txt\")   modifica texto',
+            "    move   <id> (dx, dy)                             desplaza figura o grupo",
+            "    rotate <id> (grados)                             rota figura o grupo",
+            "    scale  <id> (factor)                             escala ×factor figura o grupo",
+            "    copy   <id>                                      duplica figura con nuevo ID",
+            "    group  <id1> <id2> ...                           agrupa figuras",
+            "    ungroup <gid>                                    disuelve el grupo",
             "    delete <id>    elimina figura o grupo",
             "    show   <id>    hace visible            hide <id>    oculta (cascada en grupos)",
             "    list           lista figuras y grupos   clear screen  vacía",
             "    help           esta ayuda               exit / quit   salir",
-            "  Tipos: circle  square  triangle  line  pentagon",
+            "  Tipos: circle  square  triangle  line  pentagon  rectangle  ellipse  text",
         ]:
             self._write(ln, "info")
 

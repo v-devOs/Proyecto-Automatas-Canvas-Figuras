@@ -16,25 +16,34 @@ from typing import Dict, List, Optional, Tuple
 
 @dataclass
 class EntradaFigura:
-    id:        str
-    tipo:      str
-    color:     str
-    escala:    int
-    posicion:  Tuple[int, int]
-    visible:   bool = True
-    eliminada: bool = False
-    pos_fin:   Optional[Tuple[int, int]] = None   # solo para tipo=="line"
-    rotacion:  int  = 0                           # grados acumulados
-    grupo_ids: Optional[List[str]] = None         # solo para tipo=="group"
+    id:          str
+    tipo:        str
+    color:       str
+    escala:      int
+    posicion:    Tuple[int, int]
+    visible:     bool = True
+    eliminada:   bool = False
+    pos_fin:     Optional[Tuple[int, int]] = None   # solo para tipo=="line"
+    rotacion:    int  = 0                           # grados acumulados
+    grupo_ids:   Optional[List[str]] = None         # solo para tipo=="group"
+    param_extra: Optional[int]       = None         # alto (rectangle) / ry (ellipse)
+    contenido:   Optional[str]       = None         # solo para tipo=="text"
 
     def __repr__(self) -> str:
         if self.tipo == "group":
             miembros = ", ".join(self.grupo_ids or [])
             return f"EntradaFigura(id={self.id!r}, tipo='group', miembros=[{miembros}])"
         estado = "ELIMINADA" if self.eliminada else ("oculta" if not self.visible else "visible")
+        extra = ""
+        if self.tipo == "rectangle":
+            extra = f", ancho={self.escala}, alto={self.param_extra}"
+        elif self.tipo == "ellipse":
+            extra = f", rx={self.escala}, ry={self.param_extra}"
+        elif self.tipo == "text" and self.contenido is not None:
+            extra = f", contenido={self.contenido!r}"
         return (
             f"EntradaFigura(id={self.id!r}, tipo={self.tipo!r}, "
-            f"color={self.color!r}, escala={self.escala}, "
+            f"color={self.color!r}{extra}, "
             f"posicion={list(self.posicion)}, estado={estado})"
         )
 

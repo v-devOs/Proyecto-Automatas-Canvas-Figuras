@@ -14,6 +14,10 @@ Gramática implementada:
                         | <ungroup>| <scale>
   <create>            ::= "create" <tipo_figura>
                         | "create" <tipo_figura> "(" <parametros> ")"
+                        | "create" "line"      "(" <parametros_linea>      ")"
+                        | "create" "rectangle" "(" <parametros_rectangulo> ")"
+                        | "create" "ellipse"   "(" <parametros_elipse>     ")"
+                        | "create" "text"      "(" <parametros_texto>      ")"
   <update>            ::= "update" <identificador> "(" <parametros_update> ")"
   <delete>            ::= "delete" <identificador>
   <show>              ::= "show"   <identificador>
@@ -27,9 +31,18 @@ Gramática implementada:
   <group>             ::= "group"  <identificador> { <identificador> }
   <ungroup>           ::= "ungroup" <identificador>
   <scale>             ::= "scale"  <identificador> "(" NUM_DEC ")"
-  <parametros>        ::= <color> "," <escala> "," <posicion>
-  <parametros_update> ::= <valor_update> "," <valor_update> "," <valor_update>
+  <parametros>                  ::= <color> "," <escala> "," <posicion>
+  <parametros_linea>            ::= <color> "," NUM_DEC "," <posicion> "," <posicion>
+  <parametros_rectangulo>       ::= <color> "," NUM_DEC "," NUM_DEC "," <posicion>
+  <parametros_elipse>           ::= <color> "," NUM_DEC "," NUM_DEC "," <posicion>
+  <parametros_texto>            ::= <color> "," NUM_DEC "," <posicion> "," STRING
+  <parametros_update>           ::= <valor_update> "," <valor_update> "," <valor_update>
+  <parametros_update_linea>     ::= <valor_update> x4
+  <parametros_update_rectangulo>::= <valor_update> x4
+  <parametros_update_elipse>    ::= <valor_update> x4
+  <parametros_update_texto>     ::= <valor_update> x3 "," <valor_contenido>
   <valor_update>      ::= <color> | <escala> | <posicion> | "_"
+  <valor_contenido>   ::= STRING | "_"
   <color>             ::= STRING | NUM_HEX
   <escala>            ::= NUM_DEC
   <posicion>          ::= "[" NUM_DEC "," NUM_DEC "]"
@@ -46,6 +59,8 @@ from ast_nodes import (
     ShowNode, HideNode, ListNode, ClearNode, HelpNode, RotateNode,
     MoveNode, CopyNode, GroupNode, UngroupNode, ScaleNode,
     ParametrosNode, ParametrosLineaNode, ParametrosUpdateNode, ParametrosUpdateLineaNode,
+    ParametrosRectanguloNode, ParametrosElipseNode, ParametrosTextoNode,
+    ParametrosUpdateRectanguloNode, ParametrosUpdateElipseNode, ParametrosUpdateTextoNode,
     ValorUpdateNode, PosicionNode,
 )
 
@@ -79,7 +94,7 @@ class ErrorSintactico(Exception):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _SUGERENCIAS_TIPO: Dict[TipoToken, str] = {
-    TipoToken.TIPO_FIGURA:   "Tipos de figura válidos: circle  square  triangle  line  pentagon",
+    TipoToken.TIPO_FIGURA:   "Tipos de figura válidos: circle  square  triangle  line  pentagon  rectangle  ellipse  text",
     TipoToken.IDENTIFICADOR: "Los identificadores tienen la forma tipo+4dígitos. Ej: circle0001",
     TipoToken.LPAREN:        "Se esperaba '(' para abrir los parámetros. Ej: create circle(\"rojo\", 2, [0,0])",
     TipoToken.RPAREN:        "Se esperaba ')' para cerrar los parámetros",
@@ -227,10 +242,11 @@ class Parser:
     def _parse_create(self) -> CreateNode:
         """
         <create> ::= "create" <tipo_figura>
-                   | "create" <tipo_figura> "(" <parametros> ")"
-                   | "create" "line" "(" <parametros_linea> ")"
-
-        Para 'line' los parámetros son: <color> "," <posicion> "," <posicion>
+                   | "create" <tipo_figura>   "(" <parametros>           ")"
+                   | "create" "line"          "(" <parametros_linea>      ")"
+                   | "create" "rectangle"     "(" <parametros_rectangulo> ")"
+                   | "create" "ellipse"       "(" <parametros_elipse>     ")"
+                   | "create" "text"          "(" <parametros_texto>      ")"
         """
         self._match_lexema(TipoToken.PALABRA_RESERVADA, "create")
         tipo_tok    = self.match(TipoToken.TIPO_FIGURA)
@@ -240,6 +256,12 @@ class Parser:
             self.match(TipoToken.LPAREN)
             if tipo_figura == "line":
                 params = self._parse_parametros_linea()
+            elif tipo_figura == "rectangle":
+                params = self._parse_parametros_rectangulo()
+            elif tipo_figura == "ellipse":
+                params = self._parse_parametros_elipse()
+            elif tipo_figura == "text":
+                params = self._parse_parametros_texto()
             else:
                 params = self._parse_parametros()
             self.match(TipoToken.RPAREN)
@@ -250,13 +272,25 @@ class Parser:
     def _parse_update(self) -> UpdateNode:
         """
         <update> ::= "update" <identificador> "(" <parametros_update> ")"
-                   | "update" <line_id>       "(" <parametros_update_linea> ")"
+
+        El tipo de parámetros se selecciona según el prefijo del identificador:
+          line*       → ParametrosUpdateLineaNode     (color, grosor, inicio, fin)
+          rectangle*  → ParametrosUpdateRectanguloNode (color, ancho, alto, posicion)
+          ellipse*    → ParametrosUpdateElipseNode     (color, rx, ry, posicion)
+          text*       → ParametrosUpdateTextoNode      (color, tamaño, posicion, contenido)
+          otros       → ParametrosUpdateNode           (color, escala, posicion)
         """
         self._match_lexema(TipoToken.PALABRA_RESERVADA, "update")
         id_tok = self.match(TipoToken.IDENTIFICADOR)
         self.match(TipoToken.LPAREN)
         if id_tok.lexema.startswith("line"):
             params = self._parse_parametros_update_linea()
+        elif id_tok.lexema.startswith("rectangle"):
+            params = self._parse_parametros_update_rectangulo()
+        elif id_tok.lexema.startswith("ellipse"):
+            params = self._parse_parametros_update_elipse()
+        elif id_tok.lexema.startswith("text"):
+            params = self._parse_parametros_update_texto()
         else:
             params = self._parse_parametros_update()
         self.match(TipoToken.RPAREN)
@@ -381,6 +415,124 @@ class Parser:
         v_fin    = self._parse_valor_update()
         return ParametrosUpdateLineaNode(
             color=v_color, grosor=v_grosor, inicio=v_inicio, fin=v_fin,
+        )
+
+    def _parse_parametros_rectangulo(self) -> ParametrosRectanguloNode:
+        """<parametros_rectangulo> ::= <color> "," NUM_DEC "," NUM_DEC "," <posicion>"""
+        color    = self._parse_color()
+        self.match(TipoToken.COMMA)
+        ancho    = self._parse_escala()
+        self.match(TipoToken.COMMA)
+        alto     = self._parse_escala()
+        self.match(TipoToken.COMMA)
+        posicion = self._parse_posicion()
+        return ParametrosRectanguloNode(color=color, ancho=ancho, alto=alto, posicion=posicion)
+
+    def _parse_parametros_elipse(self) -> ParametrosElipseNode:
+        """<parametros_elipse> ::= <color> "," NUM_DEC "," NUM_DEC "," <posicion>"""
+        color    = self._parse_color()
+        self.match(TipoToken.COMMA)
+        rx       = self._parse_escala()
+        self.match(TipoToken.COMMA)
+        ry       = self._parse_escala()
+        self.match(TipoToken.COMMA)
+        posicion = self._parse_posicion()
+        return ParametrosElipseNode(color=color, rx=rx, ry=ry, posicion=posicion)
+
+    def _parse_parametros_texto(self) -> ParametrosTextoNode:
+        """<parametros_texto> ::= <color> "," NUM_DEC "," <posicion> "," STRING"""
+        color    = self._parse_color()
+        self.match(TipoToken.COMMA)
+        tamanio  = self._parse_escala()
+        self.match(TipoToken.COMMA)
+        posicion = self._parse_posicion()
+        self.match(TipoToken.COMMA)
+        tok = self._actual
+        if tok.tipo != TipoToken.STRING:
+            raise ErrorSintactico(
+                "S002",
+                f"se esperaba STRING para el contenido del texto, "
+                f"se obtuvo {tok.tipo.value} ({tok.lexema!r})",
+                tok.linea, tok.columna,
+                sugerencia='El contenido debe ser un string entre comillas. Ej: "Hola mundo"',
+            )
+        self._pos += 1
+        return ParametrosTextoNode(color=color, tamanio=tamanio, posicion=posicion, contenido=tok.lexema)
+
+    def _parse_parametros_update_rectangulo(self) -> ParametrosUpdateRectanguloNode:
+        """
+        <parametros_update_rectangulo> ::=
+            <valor_update> "," <valor_update> "," <valor_update> "," <valor_update>
+
+        Slots: color, ancho, alto, posicion.
+        """
+        v_color    = self._parse_valor_update()
+        self.match(TipoToken.COMMA)
+        v_ancho    = self._parse_valor_update()
+        self.match(TipoToken.COMMA)
+        v_alto     = self._parse_valor_update()
+        self.match(TipoToken.COMMA)
+        v_posicion = self._parse_valor_update()
+        return ParametrosUpdateRectanguloNode(
+            color=v_color, ancho=v_ancho, alto=v_alto, posicion=v_posicion,
+        )
+
+    def _parse_parametros_update_elipse(self) -> ParametrosUpdateElipseNode:
+        """
+        <parametros_update_elipse> ::=
+            <valor_update> "," <valor_update> "," <valor_update> "," <valor_update>
+
+        Slots: color, rx, ry, posicion.
+        """
+        v_color    = self._parse_valor_update()
+        self.match(TipoToken.COMMA)
+        v_rx       = self._parse_valor_update()
+        self.match(TipoToken.COMMA)
+        v_ry       = self._parse_valor_update()
+        self.match(TipoToken.COMMA)
+        v_posicion = self._parse_valor_update()
+        return ParametrosUpdateElipseNode(
+            color=v_color, rx=v_rx, ry=v_ry, posicion=v_posicion,
+        )
+
+    def _parse_parametros_update_texto(self) -> ParametrosUpdateTextoNode:
+        """
+        <parametros_update_texto> ::=
+            <valor_update> "," <valor_update> "," <valor_update> "," <valor_contenido>
+
+        Slots: color, tamaño, posicion, contenido.
+        """
+        v_color    = self._parse_valor_update()
+        self.match(TipoToken.COMMA)
+        v_tamanio  = self._parse_valor_update()
+        self.match(TipoToken.COMMA)
+        v_posicion = self._parse_valor_update()
+        self.match(TipoToken.COMMA)
+        v_contenido = self._parse_valor_contenido()
+        return ParametrosUpdateTextoNode(
+            color=v_color, tamanio=v_tamanio, posicion=v_posicion, contenido=v_contenido,
+        )
+
+    def _parse_valor_contenido(self) -> ValorUpdateNode:
+        """
+        <valor_contenido> ::= STRING | "_"
+
+        Usado exclusivamente para el slot de contenido en update text.
+        FIRST = { STRING, UNDERSCORE }
+        """
+        tok = self._actual
+        if tok.tipo == TipoToken.STRING:
+            self._pos += 1
+            return ValorUpdateNode(tipo="contenido", valor=tok.lexema)
+        if tok.tipo == TipoToken.UNDERSCORE:
+            self._pos += 1
+            return ValorUpdateNode(tipo="wildcard", valor=None)
+        raise ErrorSintactico(
+            "S002",
+            f"se esperaba STRING o '_' para el contenido del texto, "
+            f"se obtuvo {tok.tipo.value} ({tok.lexema!r})",
+            tok.linea, tok.columna,
+            sugerencia='Usa un string "Hola" o _ para mantener el valor actual',
         )
 
     def _parse_parametros(self) -> ParametrosNode:

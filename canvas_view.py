@@ -44,11 +44,14 @@ OUTLINE_DEF = "#cdd6f4"
 
 # Mapeo tipo → color de relleno por defecto (si el color es "white" o no parseable)
 _TIPO_COLOR: Dict[str, str] = {
-    "circle":   "#89b4fa",
-    "square":   "#a6e3a1",
-    "triangle": "#f9e2af",
-    "line":     "#f38ba8",
-    "pentagon": "#cba6f7",
+    "circle":    "#89b4fa",
+    "square":    "#a6e3a1",
+    "triangle":  "#f9e2af",
+    "line":      "#f38ba8",
+    "pentagon":  "#cba6f7",
+    "rectangle": "#fab387",
+    "ellipse":   "#94e2d5",
+    "text":      "#f2cdcd",
 }
 
 
@@ -466,6 +469,8 @@ class CanvasView:
             ShowNode, HideNode, ListNode, ClearNode, HelpNode,
             RotateNode, MoveNode, CopyNode, GroupNode, UngroupNode, ScaleNode,
             ParametrosNode, ParametrosUpdateNode, ValorUpdateNode, PosicionNode,
+            ParametrosRectanguloNode, ParametrosElipseNode, ParametrosTextoNode,
+            ParametrosUpdateRectanguloNode, ParametrosUpdateElipseNode, ParametrosUpdateTextoNode,
         )
 
         w          = self._ast_text
@@ -570,6 +575,99 @@ class CanvasView:
             self._txt_append(w, pp + "└── ", "branch")
             self._txt_append(w, "posicion: ", "field")
             self._txt_append(w, f"[{nodo.posicion.x}, {nodo.posicion.y}]\n", "value")
+
+        elif isinstance(nodo, ParametrosRectanguloNode):
+            self._txt_append(w, child_pre + "└── ", "branch")
+            self._txt_append(w, "ParametrosRectanguloNode\n", "node")
+            pp = child_pre + "    "
+            self._txt_append(w, pp + "├── ", "branch")
+            self._txt_append(w, "color: ", "field")
+            self._txt_append(w, nodo.color + "\n", "value")
+            self._txt_append(w, pp + "├── ", "branch")
+            self._txt_append(w, "ancho: ", "field")
+            self._txt_append(w, str(nodo.ancho) + "\n", "value")
+            self._txt_append(w, pp + "├── ", "branch")
+            self._txt_append(w, "alto: ", "field")
+            self._txt_append(w, str(nodo.alto) + "\n", "value")
+            self._txt_append(w, pp + "└── ", "branch")
+            self._txt_append(w, "posicion: ", "field")
+            self._txt_append(w, f"[{nodo.posicion.x}, {nodo.posicion.y}]\n", "value")
+
+        elif isinstance(nodo, ParametrosElipseNode):
+            self._txt_append(w, child_pre + "└── ", "branch")
+            self._txt_append(w, "ParametrosElipseNode\n", "node")
+            pp = child_pre + "    "
+            self._txt_append(w, pp + "├── ", "branch")
+            self._txt_append(w, "color: ", "field")
+            self._txt_append(w, nodo.color + "\n", "value")
+            self._txt_append(w, pp + "├── ", "branch")
+            self._txt_append(w, "rx: ", "field")
+            self._txt_append(w, str(nodo.rx) + "\n", "value")
+            self._txt_append(w, pp + "├── ", "branch")
+            self._txt_append(w, "ry: ", "field")
+            self._txt_append(w, str(nodo.ry) + "\n", "value")
+            self._txt_append(w, pp + "└── ", "branch")
+            self._txt_append(w, "posicion: ", "field")
+            self._txt_append(w, f"[{nodo.posicion.x}, {nodo.posicion.y}]\n", "value")
+
+        elif isinstance(nodo, ParametrosTextoNode):
+            self._txt_append(w, child_pre + "└── ", "branch")
+            self._txt_append(w, "ParametrosTextoNode\n", "node")
+            pp = child_pre + "    "
+            self._txt_append(w, pp + "├── ", "branch")
+            self._txt_append(w, "color: ", "field")
+            self._txt_append(w, nodo.color + "\n", "value")
+            self._txt_append(w, pp + "├── ", "branch")
+            self._txt_append(w, "tamaño: ", "field")
+            self._txt_append(w, str(nodo.tamanio) + "\n", "value")
+            self._txt_append(w, pp + "├── ", "branch")
+            self._txt_append(w, "posicion: ", "field")
+            self._txt_append(w, f"[{nodo.posicion.x}, {nodo.posicion.y}]\n", "value")
+            self._txt_append(w, pp + "└── ", "branch")
+            self._txt_append(w, "contenido: ", "field")
+            self._txt_append(w, nodo.contenido + "\n", "value")
+
+        elif isinstance(nodo, ParametrosUpdateRectanguloNode):
+            self._txt_append(w, child_pre + "└── ", "branch")
+            self._txt_append(w, "ParametrosUpdateRectanguloNode\n", "node")
+            pp = child_pre + "    "
+            for label, slot in (("color", nodo.color), ("ancho", nodo.ancho),
+                                 ("alto", nodo.alto), ("posicion", nodo.posicion)):
+                connector2 = "└── " if label == "posicion" else "├── "
+                self._txt_append(w, pp + connector2, "branch")
+                self._txt_append(w, f"{label}: ", "field")
+                if slot.tipo == "wildcard":
+                    self._txt_append(w, "_ (conservar)\n", "wildcard")
+                else:
+                    self._txt_append(w, f"{slot.valor!r}\n", "value")
+
+        elif isinstance(nodo, ParametrosUpdateElipseNode):
+            self._txt_append(w, child_pre + "└── ", "branch")
+            self._txt_append(w, "ParametrosUpdateElipseNode\n", "node")
+            pp = child_pre + "    "
+            for label, slot in (("color", nodo.color), ("rx", nodo.rx),
+                                 ("ry", nodo.ry), ("posicion", nodo.posicion)):
+                connector2 = "└── " if label == "posicion" else "├── "
+                self._txt_append(w, pp + connector2, "branch")
+                self._txt_append(w, f"{label}: ", "field")
+                if slot.tipo == "wildcard":
+                    self._txt_append(w, "_ (conservar)\n", "wildcard")
+                else:
+                    self._txt_append(w, f"{slot.valor!r}\n", "value")
+
+        elif isinstance(nodo, ParametrosUpdateTextoNode):
+            self._txt_append(w, child_pre + "└── ", "branch")
+            self._txt_append(w, "ParametrosUpdateTextoNode\n", "node")
+            pp = child_pre + "    "
+            for label, slot in (("color", nodo.color), ("tamaño", nodo.tamanio),
+                                 ("posicion", nodo.posicion), ("contenido", nodo.contenido)):
+                connector2 = "└── " if label == "contenido" else "├── "
+                self._txt_append(w, pp + connector2, "branch")
+                self._txt_append(w, f"{label}: ", "field")
+                if slot.tipo == "wildcard":
+                    self._txt_append(w, "_ (conservar)\n", "wildcard")
+                else:
+                    self._txt_append(w, f"{slot.valor!r}\n", "value")
 
         elif isinstance(nodo, ParametrosUpdateNode):
             self._txt_append(w, child_pre + "└── ", "branch")
@@ -712,6 +810,48 @@ class CanvasView:
             iid = self._canvas.create_polygon(pts, **kw)
             if dash:
                 self._canvas.itemconfig(iid, dash=dash)
+            items.append(iid)
+
+        elif e.tipo == "rectangle":
+            # sz usa escala (ancho); param_extra guarda el alto
+            w_px = max(e.escala * UNIT, 4)
+            h_px = max((e.param_extra or e.escala) * UNIT, 4)
+            pts = self._rotate_pts(
+                [cx - w_px, cy - h_px, cx + w_px, cy - h_px,
+                 cx + w_px, cy + h_px, cx - w_px, cy + h_px],
+                cx, cy, e.rotacion,
+            )
+            iid = self._canvas.create_polygon(pts, **kw)
+            if dash:
+                self._canvas.itemconfig(iid, dash=dash)
+            items.append(iid)
+
+        elif e.tipo == "ellipse":
+            # escala = rx (radio horizontal), param_extra = ry (radio vertical)
+            rx_px = max(e.escala * UNIT, 4)
+            ry_px = max((e.param_extra or e.escala) * UNIT, 4)
+            # Aproximar la elipse con un polígono de 36 puntos para soportar rotación
+            raw_ellipse: List[float] = []
+            for i in range(36):
+                a = math.radians(i * 10)
+                raw_ellipse += [cx + rx_px * math.cos(a), cy + ry_px * math.sin(a)]
+            pts = self._rotate_pts(raw_ellipse, cx, cy, e.rotacion)
+            iid = self._canvas.create_polygon(pts, smooth=True, **kw)
+            if dash:
+                self._canvas.itemconfig(iid, dash=dash)
+            items.append(iid)
+
+        elif e.tipo == "text":
+            font_size = max(8, e.escala * 2)
+            text_color = _parse_color(e.color, e.tipo) if e.visible else "#585b70"
+            contenido = (e.contenido or '"texto"').strip('"')
+            iid = self._canvas.create_text(
+                cx, cy,
+                text=contenido,
+                fill=text_color,
+                font=("Consolas", font_size, "bold"),
+                anchor="center",
+            )
             items.append(iid)
 
         # Etiqueta con el id de la figura

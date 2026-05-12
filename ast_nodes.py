@@ -88,6 +88,60 @@ class ParametrosUpdateLineaNode:
     fin:    ValorUpdateNode
 
 
+@dataclass
+class ParametrosRectanguloNode:
+    """Parámetros de create rectangle: color, ancho, alto, posicion."""
+    color:    str
+    ancho:    int
+    alto:     int
+    posicion: PosicionNode
+
+
+@dataclass
+class ParametrosElipseNode:
+    """Parámetros de create ellipse: color, rx (radio horizontal), ry (radio vertical), posicion."""
+    color:    str
+    rx:       int
+    ry:       int
+    posicion: PosicionNode
+
+
+@dataclass
+class ParametrosTextoNode:
+    """Parámetros de create text: color, tamaño de fuente, posicion y contenido."""
+    color:     str
+    tamanio:   int
+    posicion:  PosicionNode
+    contenido: str
+
+
+@dataclass
+class ParametrosUpdateRectanguloNode:
+    """Cuatro slots para update rectangle: color, ancho, alto, posicion."""
+    color:    ValorUpdateNode
+    ancho:    ValorUpdateNode
+    alto:     ValorUpdateNode
+    posicion: ValorUpdateNode
+
+
+@dataclass
+class ParametrosUpdateElipseNode:
+    """Cuatro slots para update ellipse: color, rx, ry, posicion."""
+    color:    ValorUpdateNode
+    rx:       ValorUpdateNode
+    ry:       ValorUpdateNode
+    posicion: ValorUpdateNode
+
+
+@dataclass
+class ParametrosUpdateTextoNode:
+    """Cuatro slots para update text: color, tamaño, posicion, contenido."""
+    color:     ValorUpdateNode
+    tamanio:   ValorUpdateNode
+    posicion:  ValorUpdateNode
+    contenido: ValorUpdateNode  # tipo="contenido" o "wildcard"
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # NODOS DE COMANDOS
 # ═══════════════════════════════════════════════════════════════════════════════

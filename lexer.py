@@ -200,6 +200,7 @@ _RESERVADAS: FrozenSet[str] = frozenset({
 
 _TIPOS_FIGURA: FrozenSet[str] = frozenset({
     "circle", "square", "triangle", "line", "pentagon",
+    "rectangle", "ellipse", "text",
 })
 
 # Prefijos válidos para identificadores: tipos de figura + "group" (para group0001)
@@ -377,7 +378,8 @@ class Lexer:
             sugerencia=(
                 "Palabras reservadas: create update delete show hide list clear screen help "
                 "rotate move copy group ungroup scale. "
-                "Tipos de figura: circle  square  triangle  line  pentagon"
+                "Tipos de figura: circle  square  triangle  line  pentagon  "
+                "rectangle  ellipse  text"
             ),
             col_fin=col + len(lexema) - 1,
         ))
@@ -397,7 +399,8 @@ class Lexer:
                 lin, col,
                 sugerencia=(
                     "El prefijo debe ser un tipo de figura o 'group' seguido de 4 dígitos. "
-                    "Ej: circle0001  square0042  triangle0003  line0010  pentagon0001  group0001"
+                    "Ej: circle0001  square0042  triangle0003  line0010  pentagon0001  "
+                    "rectangle0001  ellipse0001  text0001  group0001"
                 ),
                 col_fin=col + len(prefijo) - 1,
             ))
