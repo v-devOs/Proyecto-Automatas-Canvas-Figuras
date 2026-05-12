@@ -13,7 +13,7 @@ from canvas_view    import CanvasView
 from ast_nodes      import (
     ProgramaNode, ListNode, HelpNode,
     CreateNode, UpdateNode, DeleteNode,
-    ShowNode, HideNode, ClearNode,
+    ShowNode, HideNode, ClearNode, RotateNode,
 )
 
 
@@ -34,6 +34,7 @@ class Executor:
             ListNode:   self._exec_list,
             ClearNode:  self._exec_clear,
             HelpNode:   self._exec_help,
+            RotateNode: self._exec_rotate,
         }
 
     def ejecutar(self, programa: ProgramaNode) -> None:
@@ -49,7 +50,7 @@ class Executor:
             e = figs[-1]
             if e.pos_fin is not None:
                 self._write(
-                    f"  OK: {e.id}  (color={e.color}, "
+                    f"  OK: {e.id}  (color={e.color}, grosor={e.escala}, "
                     f"inicio={list(e.posicion)}, fin={list(e.pos_fin)})", "ok")
             else:
                 self._write(
@@ -60,7 +61,7 @@ class Executor:
         if e:
             if e.pos_fin is not None:
                 self._write(
-                    f"  OK: {e.id}  (color={e.color}, "
+                    f"  OK: {e.id}  (color={e.color}, grosor={e.escala}, "
                     f"inicio={list(e.posicion)}, fin={list(e.pos_fin)})", "ok")
             else:
                 self._write(
@@ -80,32 +81,41 @@ class Executor:
         if not figs:
             self._write("  (no hay figuras activas)", "info")
             return
-        self._write(f"  {'ID':<16} {'TIPO':<10} {'COLOR':<10} {'ESC':<4} {'POS / INICIO':<14} {'FIN':<12} VIS", "info")
+        self._write(
+            f"  {'ID':<16} {'TIPO':<10} {'COLOR':<10} {'ESC':<4} {'POS / INICIO':<14} {'FIN':<12} {'ROT':<5} VIS", "info")
         for e in figs:
+            rot = f"{e.rotacion}°"
             if e.pos_fin is not None:
                 self._write(
-                    f"  {e.id:<16} {e.tipo:<10} {e.color:<10} {'—':<4} "
-                    f"{str(list(e.posicion)):<14} {str(list(e.pos_fin)):<12} {'si' if e.visible else 'no'}",
+                    f"  {e.id:<16} {e.tipo:<10} {e.color:<10} {e.escala:<4} "
+                    f"{str(list(e.posicion)):<14} {str(list(e.pos_fin)):<12} {rot:<5} {'si' if e.visible else 'no'}",
                     "ok" if e.visible else "warn",
                 )
             else:
                 self._write(
                     f"  {e.id:<16} {e.tipo:<10} {e.color:<10} {e.escala:<4} "
-                    f"{str(list(e.posicion)):<14} {'—':<12} {'si' if e.visible else 'no'}",
+                    f"{str(list(e.posicion)):<14} {'—':<12} {rot:<5} {'si' if e.visible else 'no'}",
                     "ok" if e.visible else "warn",
                 )
 
     def _exec_clear(self, _) -> None:
         self._write("  OK: tabla vaciada", "ok")
 
+    def _exec_rotate(self, nodo: RotateNode) -> None:
+        e = self._tabla.obtener(nodo.id)
+        if e:
+            self._write(
+                f"  OK: {e.id}  rotación={e.rotacion}°", "ok")
+
     def _exec_help(self, _) -> None:
         for ln in [
             "  Comandos disponibles:",
-            "    create <tipo>                          crea figura con valores por defecto",
-            "    create <tipo>(color,escala,[x,y])       crea con parámetros",
-            "    create line(color,[x1,y1],[x2,y2])      línea entre dos puntos",
-            "    update <id>(_|color,_|esc,_|pos)        modifica uno o más campos",
-            "    update <line_id>(_|color,[x1,y1],[x2,y2])  modifica línea",
+            "    create <tipo>                              crea figura con valores por defecto",
+            "    create <tipo>(color, escala, [x,y])        crea con parámetros",
+            "    create line(color, grosor, [x1,y1], [x2,y2])  línea entre dos puntos",
+            "    update <id>(_|color, _|esc, _|pos)         modifica uno o más campos",
+            "    update <line_id>(_|color, _|grosor, _|[x1,y1], _|[x2,y2])  modifica línea",
+            "    rotate <id> (grados)                       rota figura los grados indicados",
             "    delete <id>    elimina figura",
             "    show   <id>    hace visible         hide <id>    oculta",
             "    list           lista figuras         clear screen  vacía",

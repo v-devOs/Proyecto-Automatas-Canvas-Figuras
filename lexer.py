@@ -194,7 +194,7 @@ _TABLA: Dict[Tuple[Estado, CC], Estado] = {
 
 _RESERVADAS: FrozenSet[str] = frozenset({
     "create", "update", "delete", "show", "hide",
-    "list",   "clear",  "screen", "help",
+    "list",   "clear",  "screen", "help", "rotate",
 })
 
 _TIPOS_FIGURA: FrozenSet[str] = frozenset({

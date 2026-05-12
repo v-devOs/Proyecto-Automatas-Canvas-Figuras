@@ -56,8 +56,9 @@ class ParametrosNode:
 
 @dataclass
 class ParametrosLineaNode:
-    """Parámetros de create line: color, punto de inicio y punto de fin."""
+    """Parámetros de create line: color, grosor, punto de inicio y punto de fin."""
     color:  str
+    grosor: int
     inicio: PosicionNode
     fin:    PosicionNode
 
@@ -75,6 +76,18 @@ class ParametrosUpdateNode:
     posicion: ValorUpdateNode
 
 
+@dataclass
+class ParametrosUpdateLineaNode:
+    """
+    Cuatro slots para update de line: color, grosor, inicio, fin.
+    Cada uno puede ser su valor o wildcard (_).
+    """
+    color:  ValorUpdateNode
+    grosor: ValorUpdateNode
+    inicio: ValorUpdateNode
+    fin:    ValorUpdateNode
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # NODOS DE COMANDOS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -88,7 +101,7 @@ class CreateNode:
 @dataclass
 class UpdateNode:
     id:         str
-    parametros: ParametrosUpdateNode
+    parametros: Union[ParametrosUpdateNode, "ParametrosUpdateLineaNode"]
 
 
 @dataclass
@@ -121,13 +134,19 @@ class HelpNode:
     pass
 
 
+@dataclass
+class RotateNode:
+    id:     str
+    grados: int
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # NODO RAÍZ
 # ═══════════════════════════════════════════════════════════════════════════════
 
 ComandoNode = Union[
     CreateNode, UpdateNode, DeleteNode,
-    ShowNode, HideNode, ListNode, ClearNode, HelpNode,
+    ShowNode, HideNode, ListNode, ClearNode, HelpNode, RotateNode,
 ]
 
 

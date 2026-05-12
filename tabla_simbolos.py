@@ -24,6 +24,7 @@ class EntradaFigura:
     visible:   bool = True
     eliminada: bool = False
     pos_fin:   Optional[Tuple[int, int]] = None   # solo para type=="line"
+    rotacion:  int  = 0                           # grados acumulados
 
     def __repr__(self) -> str:
         estado = "ELIMINADA" if self.eliminada else ("oculta" if not self.visible else "visible")

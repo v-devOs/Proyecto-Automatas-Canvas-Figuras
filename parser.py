@@ -35,8 +35,8 @@ from lexer import ErrorLexico, Lexer, Token, TipoToken, tokenizar
 from ast_nodes import (
     ProgramaNode, ComandoNode,
     CreateNode, UpdateNode, DeleteNode,
-    ShowNode, HideNode, ListNode, ClearNode, HelpNode,
-    ParametrosNode, ParametrosLineaNode, ParametrosUpdateNode,
+    ShowNode, HideNode, ListNode, ClearNode, HelpNode, RotateNode,
+    ParametrosNode, ParametrosLineaNode, ParametrosUpdateNode, ParametrosUpdateLineaNode,
     ValorUpdateNode, PosicionNode,
 )
 
@@ -115,6 +115,7 @@ class Parser:
             "list":   self._parse_list,
             "clear":  self._parse_clear,
             "help":   self._parse_help,
+            "rotate": self._parse_rotate,
         }
 
     # ── Utilidades ────────────────────────────────────────────────────────────
@@ -232,11 +233,17 @@ class Parser:
         return CreateNode(tipo_figura=tipo_figura)
 
     def _parse_update(self) -> UpdateNode:
-        """<update> ::= "update" <identificador> "(" <parametros_update> ")" """
+        """
+        <update> ::= "update" <identificador> "(" <parametros_update> ")"
+                   | "update" <line_id>       "(" <parametros_update_linea> ")"
+        """
         self._match_lexema(TipoToken.PALABRA_RESERVADA, "update")
         id_tok = self.match(TipoToken.IDENTIFICADOR)
         self.match(TipoToken.LPAREN)
-        params = self._parse_parametros_update()
+        if id_tok.lexema.startswith("line"):
+            params = self._parse_parametros_update_linea()
+        else:
+            params = self._parse_parametros_update()
         self.match(TipoToken.RPAREN)
         return UpdateNode(id=id_tok.lexema, parametros=params)
 
@@ -274,16 +281,45 @@ class Parser:
         self._match_lexema(TipoToken.PALABRA_RESERVADA, "help")
         return HelpNode()
 
+    def _parse_rotate(self) -> RotateNode:
+        """<rotate> ::= "rotate" <identificador> "(" NUM_DEC ")"""
+        self._match_lexema(TipoToken.PALABRA_RESERVADA, "rotate")
+        id_tok     = self.match(TipoToken.IDENTIFICADOR)
+        self.match(TipoToken.LPAREN)
+        grados_tok = self.match(TipoToken.NUM_DEC)
+        self.match(TipoToken.RPAREN)
+        return RotateNode(id=id_tok.lexema, grados=int(grados_tok.lexema))
+
     # ── No-terminales: parámetros ─────────────────────────────────────────────
 
     def _parse_parametros_linea(self) -> ParametrosLineaNode:
-        """<parametros_linea> ::= <color> "," <posicion> "," <posicion>"""
+        """<parametros_linea> ::= <color> "," NUM_DEC "," <posicion> "," <posicion>"""
         color  = self._parse_color()
+        self.match(TipoToken.COMMA)
+        grosor = self._parse_escala()
         self.match(TipoToken.COMMA)
         inicio = self._parse_posicion()
         self.match(TipoToken.COMMA)
         fin    = self._parse_posicion()
-        return ParametrosLineaNode(color=color, inicio=inicio, fin=fin)
+        return ParametrosLineaNode(color=color, grosor=grosor, inicio=inicio, fin=fin)
+
+    def _parse_parametros_update_linea(self) -> ParametrosUpdateLineaNode:
+        """
+        <parametros_update_linea> ::=
+            <valor_update> "," <valor_update> "," <valor_update> "," <valor_update>
+
+        Slots: color, grosor, inicio, fin.
+        """
+        v_color  = self._parse_valor_update()
+        self.match(TipoToken.COMMA)
+        v_grosor = self._parse_valor_update()
+        self.match(TipoToken.COMMA)
+        v_inicio = self._parse_valor_update()
+        self.match(TipoToken.COMMA)
+        v_fin    = self._parse_valor_update()
+        return ParametrosUpdateLineaNode(
+            color=v_color, grosor=v_grosor, inicio=v_inicio, fin=v_fin,
+        )
 
     def _parse_parametros(self) -> ParametrosNode:
         """<parametros> ::= <color> "," <escala> "," <posicion>"""

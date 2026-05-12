@@ -31,8 +31,8 @@ from typing import List, Optional, Tuple
 from ast_nodes import (
     ProgramaNode, ComandoNode,
     CreateNode, UpdateNode, DeleteNode,
-    ShowNode, HideNode, ListNode, ClearNode, HelpNode,
-    ParametrosLineaNode, ParametrosUpdateNode, ValorUpdateNode,
+    ShowNode, HideNode, ListNode, ClearNode, HelpNode, RotateNode,
+    ParametrosLineaNode, ParametrosUpdateNode, ParametrosUpdateLineaNode, ValorUpdateNode,
 )
 from tabla_simbolos import EntradaFigura, TablaSimbolos
 
@@ -96,6 +96,7 @@ class AnalizadorSemantico:
             ListNode:   self._check_list,
             ClearNode:  self._check_clear,
             HelpNode:   self._check_help,
+            RotateNode: self._check_rotate,
         }
 
     # ── API pública ───────────────────────────────────────────────────────────
@@ -133,9 +134,15 @@ class AnalizadorSemantico:
         pos_fin: Optional[Tuple[int, int]] = None
         if isinstance(nodo.parametros, ParametrosLineaNode):
             color    = nodo.parametros.color
-            escala   = _DEFAULT_ESCALA          # grosor por defecto
+            escala   = nodo.parametros.grosor
             posicion = (nodo.parametros.inicio.x, nodo.parametros.inicio.y)
             pos_fin  = (nodo.parametros.fin.x,    nodo.parametros.fin.y)
+        elif nodo.tipo_figura == "line":
+            raise ErrorSemantico(
+                "M006",
+                "create line requiere color, grosor, inicio y fin",
+                sugerencia='Ej: create line("rojo", 2, [0,0], [5,5])',
+            )
         elif nodo.parametros:
             color    = nodo.parametros.color
             escala   = nodo.parametros.escala
@@ -164,18 +171,22 @@ class AnalizadorSemantico:
 
         params = nodo.parametros
 
-        if entrada.tipo == "line" and entrada.pos_fin is not None:
-            # Para líneas con dos puntos: (color, inicio, fin)
-            # Slot 2 y 3 esperan posicion (o wildcard) en lugar de escala/posicion
-            self._validar_slot(params.color,    esperado="color",    slot=1)
-            self._validar_slot(params.escala,   esperado="posicion", slot=2)
-            self._validar_slot(params.posicion, esperado="posicion", slot=3)
+        if isinstance(params, ParametrosUpdateLineaNode):
+            # Línea: (color, grosor, inicio, fin)
+            self._validar_slot(params.color,  esperado="color",    slot=1)
+            self._validar_slot(params.grosor, esperado="escala",   slot=2)
+            self._validar_slot(params.inicio, esperado="posicion", slot=3)
+            self._validar_slot(params.fin,    esperado="posicion", slot=4)
 
             nuevo_color  = self._resolver_color(params.color,    entrada.color)
-            nuevo_inicio = self._resolver_posicion(params.escala,    entrada.posicion)
-            nuevo_fin    = self._resolver_posicion(params.posicion,  entrada.pos_fin)
+            nuevo_grosor = self._resolver_escala(params.grosor,  entrada.escala)
+            nuevo_inicio = self._resolver_posicion(params.inicio, entrada.posicion)
+            nuevo_fin    = self._resolver_posicion(params.fin,    entrada.pos_fin or (0, 0))
+
+            self._validar_escala(nuevo_grosor)
 
             entrada.color    = nuevo_color
+            entrada.escala   = nuevo_grosor
             entrada.posicion = nuevo_inicio
             entrada.pos_fin  = nuevo_fin
         else:
@@ -217,6 +228,12 @@ class AnalizadorSemantico:
 
     def _check_list(self, nodo: ListNode) -> None:
         pass  # sin validación semántica; la ejecución la maneja el executor
+
+    # ── rotate ────────────────────────────────────────────────────────────────────────────
+
+    def _check_rotate(self, nodo: RotateNode) -> None:
+        entrada = self._obtener_activa(nodo.id)  # M001 / M005
+        entrada.rotacion = (entrada.rotacion + nodo.grados) % 360
 
     def _check_clear(self, nodo: ClearNode) -> None:
         self._tabla.vaciar()

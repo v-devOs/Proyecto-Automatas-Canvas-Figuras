@@ -130,25 +130,36 @@ class CanvasView:
                   foreground=[("selected", "#cdd6f4")])
         style.configure("TPane.TFrame", background=STATUS_BG)
 
-        # ── Layout principal: Notebook izquierda | Consola derecha ───────────
-        main = tk.Frame(root, bg=STATUS_BG)
+        # ── Layout principal: PanedWindow horizontal (9 col canvas | 3 col consola) ─
+        main = tk.PanedWindow(
+            root,
+            orient=tk.HORIZONTAL,
+            bg="#313244",
+            sashwidth=4,
+            sashrelief=tk.FLAT,
+            opaqueresize=True,
+        )
         main.pack(fill=tk.BOTH, expand=True)
 
-        # Panel derecho: consola
-        con_frame = tk.Frame(main, bg="#11111b", width=340)
-        con_frame.pack(side=tk.RIGHT, fill=tk.Y)
-        con_frame.pack_propagate(False)
-        self._build_console(con_frame)
-
-        # Separador vertical
-        tk.Frame(main, bg="#313244", width=1).pack(side=tk.RIGHT, fill=tk.Y)
-
-        # Panel izquierdo: Notebook (ocupa el resto)
+        # Panel izquierdo: Notebook (9/12 = 75 %)
         left = tk.Frame(main, bg=STATUS_BG)
-        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        main.add(left, stretch="always", minsize=400)
 
         self._nb = ttk.Notebook(left)
         self._nb.pack(fill=tk.BOTH, expand=True)
+
+        # Panel derecho: consola (3/12 = 25 %)
+        con_frame = tk.Frame(main, bg="#11111b")
+        main.add(con_frame, stretch="never", minsize=200)
+        self._build_console(con_frame)
+
+        # Aplicar proporción 9:3 cuando la ventana ya tiene tamaño real
+        def _set_sash(event=None):
+            total = main.winfo_width()
+            if total > 10:
+                main.sash_place(0, int(total * 7 / 12), 0)
+                root.unbind("<Map>")
+        root.bind("<Map>", _set_sash)
 
         # ── Pestaña 1: Canvas ─────────────────────────────────────────────────
         tab_canvas = tk.Frame(self._nb, bg=BG)
@@ -578,6 +589,20 @@ class CanvasView:
         """Convierte coordenadas lógicas a píxeles del canvas."""
         return self._OX + x * GRID, self._OY - y * GRID
 
+    @staticmethod
+    def _rotate_pts(pts: List[float], cx: float, cy: float, deg: float) -> List[float]:
+        """Rota una lista plana [x0,y0,x1,y1,...] alrededor de (cx,cy)."""
+        if deg == 0:
+            return pts
+        rad = math.radians(deg)
+        cos_a, sin_a = math.cos(rad), math.sin(rad)
+        out: List[float] = []
+        for i in range(0, len(pts), 2):
+            dx, dy = pts[i] - cx, pts[i + 1] - cy
+            out.append(cx + dx * cos_a - dy * sin_a)
+            out.append(cy + dx * sin_a + dy * cos_a)
+        return out
+
     def _dibujar(self, e: EntradaFigura) -> None:
         cx, cy  = self._to_canvas(*e.posicion)
         sz      = max(e.escala * UNIT, 4)
@@ -603,14 +628,21 @@ class CanvasView:
             items.append(iid)
 
         elif e.tipo == "square":
-            iid = self._canvas.create_rectangle(
-                cx - sz, cy - sz, cx + sz, cy + sz, **kw)
+            pts = self._rotate_pts(
+                [cx - sz, cy - sz, cx + sz, cy - sz,
+                 cx + sz, cy + sz, cx - sz, cy + sz],
+                cx, cy, e.rotacion,
+            )
+            iid = self._canvas.create_polygon(pts, **kw)
             if dash:
                 self._canvas.itemconfig(iid, dash=dash)
             items.append(iid)
 
         elif e.tipo == "triangle":
-            pts = [cx, cy - sz, cx - sz, cy + sz, cx + sz, cy + sz]
+            pts = self._rotate_pts(
+                [cx, cy - sz, cx - sz, cy + sz, cx + sz, cy + sz],
+                cx, cy, e.rotacion,
+            )
             iid = self._canvas.create_polygon(pts, **kw)
             if dash:
                 self._canvas.itemconfig(iid, dash=dash)
@@ -621,25 +653,25 @@ class CanvasView:
             kw_line = dict(fill=color_linea, width=max(2, e.escala * 2))
             if dash:
                 kw_line["dash"] = dash
-            if e.pos_fin is not None:
-                cx2, cy2 = self._to_canvas(*e.pos_fin)
-                items.append(self._canvas.create_line(cx, cy, cx2, cy2, **kw_line))
-            else:
-                items.append(self._canvas.create_line(
-                    cx - sz, cy, cx + sz, cy, **kw_line))
+            cx2, cy2 = self._to_canvas(*e.pos_fin)
+            mx, my   = (cx + cx2) / 2, (cy + cy2) / 2
+            x1r, y1r, x2r, y2r = self._rotate_pts(
+                [cx, cy, cx2, cy2], mx, my, e.rotacion)
+            items.append(self._canvas.create_line(x1r, y1r, x2r, y2r, **kw_line))
 
         elif e.tipo == "pentagon":
-            pts: List[float] = []
+            raw: List[float] = []
             for i in range(5):
                 a = math.radians(-90 + i * 72)
-                pts += [cx + sz * math.cos(a), cy + sz * math.sin(a)]
+                raw += [cx + sz * math.cos(a), cy + sz * math.sin(a)]
+            pts = self._rotate_pts(raw, cx, cy, e.rotacion)
             iid = self._canvas.create_polygon(pts, **kw)
             if dash:
                 self._canvas.itemconfig(iid, dash=dash)
             items.append(iid)
 
         # Etiqueta con el id de la figura
-        if e.tipo == "line" and e.pos_fin is not None:
+        if e.tipo == "line":
             cx2, cy2 = self._to_canvas(*e.pos_fin)
             lbl_x = (cx + cx2) // 2
             lbl_y = (cy + cy2) // 2 - 10
