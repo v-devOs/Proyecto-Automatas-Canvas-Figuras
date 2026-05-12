@@ -399,17 +399,22 @@ class CanvasView:
         header_frame.pack(fill=tk.X, padx=6, pady=(6, 0))
 
         tk.Label(
-            header_frame, text=" ÁRBOL DE SINTAXIS ABSTRACTA — último comando",
+            header_frame, text=" HISTORIAL — ÁRBOL DE SINTAXIS ABSTRACTA",
             bg=STATUS_BG, fg="#7f849c",
             font=("Consolas", 9, "bold"), anchor="w",
         ).pack(side=tk.LEFT)
 
-        self._ast_cmd_lbl = tk.Label(
-            header_frame, text="",
-            bg=STATUS_BG, fg="#89dceb",
-            font=("Consolas", 9, "bold"), anchor="w",
-        )
-        self._ast_cmd_lbl.pack(side=tk.LEFT, padx=(8, 0))
+        tk.Button(
+            header_frame, text="Limpiar",
+            bg="#313244", fg="#6c7086",
+            font=("Consolas", 8), relief=tk.FLAT, cursor="hand2",
+            activebackground="#45475a", activeforeground="#cdd6f4",
+            command=lambda: (
+                self._ast_text.configure(state=tk.NORMAL),
+                self._ast_text.delete("1.0", tk.END),
+                self._ast_text.configure(state=tk.DISABLED),
+            ),
+        ).pack(side=tk.RIGHT, padx=(0, 2))
 
         frame = tk.Frame(parent, bg=STATUS_BG)
         frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=(4, 6))
@@ -442,14 +447,16 @@ class CanvasView:
         self._ast_text.tag_config("branch",  foreground="#45475a")
         self._ast_text.tag_config("wildcard",foreground="#f9e2af")
         self._ast_text.tag_config("hint",    foreground="#6c7086",  font=("Consolas", 9, "italic"))
+        self._ast_text.tag_config("cmd",     foreground="#89dceb",  font=("Consolas", 10, "bold"))
+        self._ast_text.tag_config("sep",     foreground="#313244")
 
     def mostrar_ast(self, linea: str, ast: object) -> None:
-        """Reemplaza el contenido del panel AST con el árbol del comando actual."""
-        self._ast_cmd_lbl.configure(text=f"→  {linea}")
+        """Agrega al historial del panel AST el árbol del comando recibido."""
         w = self._ast_text
-        w.configure(state=tk.NORMAL)
-        w.delete("1.0", tk.END)
-        w.configure(state=tk.DISABLED)
+        # Separador entre entradas (omitir si el widget está vacío)
+        if w.get("1.0", "end-1c") != "":
+            self._txt_append(w, "─" * 52 + "\n", "sep")
+        self._txt_append(w, f"→  {linea}\n", "cmd")
         self._ast_render(ast, depth=0, prefix="", is_last=True)
 
     def _ast_render(self, nodo: object, depth: int, prefix: str, is_last: bool) -> None:
