@@ -50,14 +50,14 @@ Gramática implementada:
 
 from __future__ import annotations
 
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from lexer import ErrorLexico, Lexer, Token, TipoToken, tokenizar
 from ast_nodes import (
     ProgramaNode, ComandoNode,
     CreateNode, UpdateNode, DeleteNode,
     ShowNode, HideNode, ListNode, ClearNode, HelpNode, RotateNode,
-    MoveNode, CopyNode, GroupNode, UngroupNode, ScaleNode,
+    MoveNode, CopyNode, GroupNode, UngroupNode, ScaleNode, SetNode,
     ParametrosNode, ParametrosLineaNode, ParametrosUpdateNode, ParametrosUpdateLineaNode,
     ParametrosRectanguloNode, ParametrosElipseNode, ParametrosTextoNode,
     ParametrosUpdateRectanguloNode, ParametrosUpdateElipseNode, ParametrosUpdateTextoNode,
@@ -106,7 +106,7 @@ _SUGERENCIAS_TIPO: Dict[TipoToken, str] = {
 
 _SUGERENCIA_COMANDOS = (
     "Comandos válidos: create  update  delete  show  hide  list  clear screen  help  "
-    "rotate  move  copy  group  ungroup  scale"
+    "rotate  move  copy  group  ungroup  scale  set"
 )
 
 
@@ -126,9 +126,11 @@ class Parser:
     # Se construye en __init__ para poder referenciar self.
     _DISPATCH: Dict[str, Callable[[], ComandoNode]]
 
-    def __init__(self, tokens: List[Token]) -> None:
-        self._tokens = tokens
-        self._pos    = 0
+    def __init__(self, tokens: List[Token],
+                 variables: Optional[Dict[str, int]] = None) -> None:
+        self._tokens    = tokens
+        self._pos       = 0
+        self._variables: Dict[str, int] = variables if variables is not None else {}
         self.errores: List[ErrorSintactico] = []
         # ── Tabla de despacho de comandos (lookahead LL(1)) ───────────────────
         self._DISPATCH = {
@@ -146,6 +148,7 @@ class Parser:
             "group":   self._parse_group,
             "ungroup": self._parse_ungroup,
             "scale":   self._parse_scale,
+            "set":     self._parse_set,
         }
 
     # ── Utilidades ────────────────────────────────────────────────────────────
@@ -331,23 +334,24 @@ class Parser:
         return HelpNode()
 
     def _parse_rotate(self) -> RotateNode:
-        """<rotate> ::= "rotate" <identificador> "(" NUM_DEC ")"""
+        """<rotate> ::= "rotate" <identificador> "(" <entero> ")"""
         self._match_lexema(TipoToken.PALABRA_RESERVADA, "rotate")
-        id_tok     = self.match(TipoToken.IDENTIFICADOR)
+        id_tok = self.match(TipoToken.IDENTIFICADOR)
         self.match(TipoToken.LPAREN)
-        grados_tok = self.match(TipoToken.NUM_DEC)
+        grados = self._parse_entero("grados de rotación (puede ser negativo)")
         self.match(TipoToken.RPAREN)
-        return RotateNode(id=id_tok.lexema, grados=int(grados_tok.lexema))
+        return RotateNode(id=id_tok.lexema, grados=grados)
+
     def _parse_move(self) -> MoveNode:
-        """<move> ::= "move" <identificador> "(" NUM_DEC "," NUM_DEC ")" """
+        """<move> ::= "move" <identificador> "(" <entero> "," <entero> ")" """
         self._match_lexema(TipoToken.PALABRA_RESERVADA, "move")
         id_tok = self.match(TipoToken.IDENTIFICADOR)
         self.match(TipoToken.LPAREN)
-        dx_tok = self.match(TipoToken.NUM_DEC)
+        dx = self._parse_entero("desplazamiento dx (puede ser negativo)")
         self.match(TipoToken.COMMA)
-        dy_tok = self.match(TipoToken.NUM_DEC)
+        dy = self._parse_entero("desplazamiento dy (puede ser negativo)")
         self.match(TipoToken.RPAREN)
-        return MoveNode(id=id_tok.lexema, dx=int(dx_tok.lexema), dy=int(dy_tok.lexema))
+        return MoveNode(id=id_tok.lexema, dx=dx, dy=dy)
 
     def _parse_copy(self) -> CopyNode:
         """<copy> ::= "copy" <identificador>"""
@@ -379,13 +383,26 @@ class Parser:
         return UngroupNode(id=id_tok.lexema)
 
     def _parse_scale(self) -> ScaleNode:
-        """<scale> ::= "scale" <identificador> "(" NUM_DEC ")" """
+        """<scale> ::= "scale" <identificador> "(" <entero> ")" """
         self._match_lexema(TipoToken.PALABRA_RESERVADA, "scale")
-        id_tok     = self.match(TipoToken.IDENTIFICADOR)
+        id_tok = self.match(TipoToken.IDENTIFICADOR)
         self.match(TipoToken.LPAREN)
-        factor_tok = self.match(TipoToken.NUM_DEC)
+        factor = self._parse_entero("factor de escala (entero > 0)")
         self.match(TipoToken.RPAREN)
-        return ScaleNode(id=id_tok.lexema, factor=int(factor_tok.lexema))
+        return ScaleNode(id=id_tok.lexema, factor=factor)
+
+    def _parse_set(self) -> SetNode:
+        """<set> ::= "set" NOMBRE_VAR (<entero> | STRING | NUM_HEX)"""
+        self._match_lexema(TipoToken.PALABRA_RESERVADA, "set")
+        var_tok = self.match(TipoToken.NOMBRE_VAR)
+        tok = self._actual
+        if tok.tipo in (TipoToken.STRING, TipoToken.NUM_HEX):
+            self._pos += 1
+            valor: Union[int, str] = tok.lexema
+        else:
+            valor = self._parse_entero("valor de la variable: entero, \"color\" o #hex")
+        return SetNode(nombre=var_tok.lexema, valor=valor)
+
     # ── No-terminales: parámetros ─────────────────────────────────────────────
 
     def _parse_parametros_linea(self) -> ParametrosLineaNode:
@@ -564,43 +581,93 @@ class Parser:
 
     def _parse_color(self) -> str:
         """
-        <color> ::= STRING | NUM_HEX
+        <color> ::= STRING | NUM_HEX | NOMBRE_VAR
 
-        FIRST = { STRING, NUM_HEX }
+        FIRST = { STRING, NUM_HEX, NOMBRE_VAR }
         """
         tok = self._actual
         if tok.tipo in (TipoToken.STRING, TipoToken.NUM_HEX):
             self._pos += 1
             return tok.lexema
+        if tok.tipo == TipoToken.NOMBRE_VAR:
+            self._pos += 1
+            nombre = tok.lexema
+            if nombre not in self._variables:
+                raise ErrorSintactico(
+                    "S004",
+                    f"variable no definida: {nombre!r}",
+                    tok.linea, tok.columna,
+                    sugerencia=f"Usa 'set {nombre} \"color\"' para definir la variable",
+                )
+            val = self._variables[nombre]
+            if not isinstance(val, str):
+                raise ErrorSintactico(
+                    "S005",
+                    f"la variable {nombre!r} tiene valor entero ({val}), no es un color",
+                    tok.linea, tok.columna,
+                    sugerencia=f"Usa 'set {nombre} \"rojo\"' o 'set {nombre} #FF0088'",
+                )
+            return val
         raise ErrorSintactico(
             "S002",
-            f"se esperaba color (STRING o NUM_HEX), "
+            f"se esperaba color (STRING, NUM_HEX o variable de color), "
             f"se obtuvo {tok.tipo.value} ({tok.lexema!r})",
             tok.linea, tok.columna,
-            sugerencia='El color puede ser un string "rojo" o un hexadecimal #FF0088',
+            sugerencia='El color puede ser un string "rojo", un hex #FF0088 o una variable: set c "red"',
+        )
+
+    def _parse_entero(self, contexto: str = "") -> int:
+        """
+        <entero> ::= NUM_DEC | NOMBRE_VAR
+
+        Acepta literales enteros (incluyendo negativos) y nombres de variable.
+        Las variables deben haber sido definidas previamente con 'set'.
+        FIRST = { NUM_DEC, NOMBRE_VAR }
+        """
+        tok = self._actual
+        if tok.tipo == TipoToken.NUM_DEC:
+            self._pos += 1
+            return int(tok.lexema)
+        if tok.tipo == TipoToken.NOMBRE_VAR:
+            self._pos += 1
+            nombre = tok.lexema
+            if nombre not in self._variables:
+                raise ErrorSintactico(
+                    "S004",
+                    f"variable no definida: {nombre!r}",
+                    tok.linea, tok.columna,
+                    sugerencia=f"Usa 'set {nombre} <valor>' para definir la variable",
+                )
+            return self._variables[nombre]
+        raise ErrorSintactico(
+            "S003",
+            f"se esperaba número o variable, "
+            f"se obtuvo {tok.tipo.value} ({tok.lexema!r})",
+            tok.linea, tok.columna,
+            sugerencia=contexto or "Se esperaba un entero o nombre de variable. Ej: 5, -3, x",
         )
 
     def _parse_escala(self) -> int:
         """
-        <escala> ::= NUM_DEC
+        <escala> ::= <entero>   (positivo; relativo al tamaño de la figura)
 
-        FIRST = { NUM_DEC }
+        FIRST = { NUM_DEC, NOMBRE_VAR }
         """
-        tok = self.match(TipoToken.NUM_DEC)
-        return int(tok.lexema)
+        return self._parse_entero("escala (entero positivo > 0)")
 
     def _parse_posicion(self) -> PosicionNode:
         """
-        <posicion> ::= "[" NUM_DEC "," NUM_DEC "]"
+        <posicion> ::= "[" <entero> "," <entero> "]"
 
         FIRST = { LBRACKET }
+        Las coordenadas admiten enteros negativos (cuadrantes negativos).
         """
         self.match(TipoToken.LBRACKET)
-        x_tok = self.match(TipoToken.NUM_DEC)
+        x = self._parse_entero("coordenada X (puede ser negativa)")
         self.match(TipoToken.COMMA)
-        y_tok = self.match(TipoToken.NUM_DEC)
+        y = self._parse_entero("coordenada Y (puede ser negativa)")
         self.match(TipoToken.RBRACKET)
-        return PosicionNode(x=int(x_tok.lexema), y=int(y_tok.lexema))
+        return PosicionNode(x=x, y=y)
 
     def _parse_valor_update(self) -> ValorUpdateNode:
         """
@@ -608,7 +675,7 @@ class Parser:
 
         FIRST sets (disjuntos → LL(1)):
             color    →  { STRING, NUM_HEX }
-            escala   →  { NUM_DEC }
+            escala   →  { NUM_DEC, NOMBRE_VAR }
             posicion →  { LBRACKET }
             wildcard →  { UNDERSCORE }
         """
@@ -616,8 +683,8 @@ class Parser:
 
         if tok.tipo in (TipoToken.STRING, TipoToken.NUM_HEX):
             return ValorUpdateNode(tipo="color",    valor=self._parse_color())
-        if tok.tipo == TipoToken.NUM_DEC:
-            return ValorUpdateNode(tipo="escala",   valor=self._parse_escala())
+        if tok.tipo in (TipoToken.NUM_DEC, TipoToken.NOMBRE_VAR):
+            return ValorUpdateNode(tipo="escala",   valor=self._parse_entero("escala"))
         if tok.tipo == TipoToken.LBRACKET:
             return ValorUpdateNode(tipo="posicion", valor=self._parse_posicion())
         if tok.tipo == TipoToken.UNDERSCORE:

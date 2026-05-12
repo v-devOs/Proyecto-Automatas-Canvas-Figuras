@@ -14,7 +14,7 @@ from ast_nodes      import (
     ProgramaNode, ListNode, HelpNode,
     CreateNode, UpdateNode, DeleteNode,
     ShowNode, HideNode, ClearNode, RotateNode,
-    MoveNode, CopyNode, GroupNode, UngroupNode, ScaleNode,
+    MoveNode, CopyNode, GroupNode, UngroupNode, ScaleNode, SetNode,
 )
 
 
@@ -24,8 +24,9 @@ from ast_nodes      import (
 
 class Executor:
     def __init__(self, tabla: TablaSimbolos, write_fn=None) -> None:
-        self._tabla = tabla
-        self._write = write_fn or (lambda text, tag="": None)
+        self._tabla     = tabla
+        self._write     = write_fn or (lambda text, tag="": None)
+        self._variables: dict = {}   # nombre → int; compartido con el parser
         self._dispatch = {
             CreateNode:  self._exec_create,
             UpdateNode:  self._exec_update,
@@ -41,7 +42,12 @@ class Executor:
             GroupNode:   self._exec_group,
             UngroupNode: self._exec_ungroup,
             ScaleNode:   self._exec_scale,
+            SetNode:     self._exec_set,
         }
+
+    @property
+    def variables(self) -> dict:
+        return self._variables
 
     def ejecutar(self, programa: ProgramaNode) -> None:
         for nodo in programa.comandos:
@@ -204,6 +210,10 @@ class Executor:
             self._write(
                 f"  OK: {e.id}  escala={e.escala}", "ok")
 
+    def _exec_set(self, nodo: SetNode) -> None:
+        self._variables[nodo.nombre] = nodo.valor
+        self._write(f"  OK: {nodo.nombre} = {nodo.valor}", "ok")
+
     def _exec_help(self, _) -> None:
         for ln in [
             "  Comandos disponibles:",
@@ -277,7 +287,7 @@ def _proceso_comando(
 
     try:
         tokens, lex_errs = tokenizar(linea)
-        p   = Parser(tokens)
+        p   = Parser(tokens, variables=executor.variables)
         ast = p.parse()
         _, sem_errs = AnalizadorSemantico(tabla).analizar(ast)
 

@@ -116,6 +116,13 @@ class CanvasView:
         self._OY = int(self._H * 0.88)
         self._current_tabla: Optional[TablaSimbolos] = None
 
+        # ── Zoom, pan y selección (deben estar antes de _draw_grid) ──────────
+        self._scale:        float            = 1.0
+        self._ox:           int              = 70
+        self._oy:           int              = int(self._H * 0.6)
+        self._first_resize: bool             = True
+        self._pan_start_pt: Optional[tuple]  = None
+
         # Ventana: casi pantalla completa
         root.geometry(f"{sw - 60}x{sh - 80}")
         root.minsize(800, 480)
@@ -168,12 +175,30 @@ class CanvasView:
         tab_canvas = tk.Frame(self._nb, bg=BG)
         self._nb.add(tab_canvas, text="  Canvas  ")
 
+        # Toolbar (arriba)
+        toolbar = tk.Frame(tab_canvas, bg=STATUS_BG, pady=2)
+        toolbar.pack(fill=tk.X, side=tk.TOP)
+        _btn_kw = dict(bg="#313244", fg=LABEL_FG, relief=tk.FLAT,
+                       padx=8, pady=2, font=("Consolas", 9),
+                       activebackground="#45475a", activeforeground=LABEL_FG,
+                       cursor="hand2")
+        tk.Button(toolbar, text="SVG",      command=self._export_svg,  **_btn_kw).pack(side=tk.LEFT, padx=2)
+        tk.Button(toolbar, text="PNG",      command=self._export_png,  **_btn_kw).pack(side=tk.LEFT, padx=2)
+        tk.Button(toolbar, text="⊛ Reset", command=self._reset_view,  **_btn_kw).pack(side=tk.LEFT, padx=8)
+        tk.Label(toolbar, text="  Rueda: zoom | Botón medio: pan",
+                 bg=STATUS_BG, fg=GRID_AXIS, font=("Consolas", 8)).pack(side=tk.LEFT, padx=6)
+
         self._canvas = tk.Canvas(
             tab_canvas,
             bg=BG, highlightthickness=0,
         )
         self._canvas.pack(fill=tk.BOTH, expand=True)
-        self._canvas.bind("<Configure>", self._on_canvas_resize)
+        self._canvas.bind("<Configure>",    self._on_canvas_resize)
+        self._canvas.bind("<MouseWheel>",   self._on_zoom)          # Windows
+        self._canvas.bind("<Button-4>",     self._on_zoom)          # Linux scroll ↑
+        self._canvas.bind("<Button-5>",     self._on_zoom)          # Linux scroll ↓
+        self._canvas.bind("<ButtonPress-2>",self._on_pan_start)     # botón medio
+        self._canvas.bind("<B2-Motion>",    self._on_pan_move)
         self._draw_grid()
 
         # ── Pestaña 2: Historial ──────────────────────────────────────────────
@@ -688,45 +713,83 @@ class CanvasView:
 
     def _on_canvas_resize(self, event: tk.Event) -> None:
         """Actualiza dimensiones y redibuja cuando el canvas cambia de tamaño."""
-        self._W  = event.width
-        self._H  = event.height
-        self._OY = int(self._H * 0.88)
+        self._W = event.width
+        self._H = event.height
+        if self._first_resize:
+            self._ox = 70
+            self._oy = int(event.height * 0.6)   # 60% desde arriba → cuadrante −Y visible
+            self._first_resize = False
         self._canvas.delete("grid")
         self._draw_grid()
         if self._current_tabla is not None:
             self.actualizar(self._current_tabla)
 
     def _draw_grid(self) -> None:
-        W, H, OX, OY = self._W, self._H, self._OX, self._OY
-        # Líneas menores
-        x = OX
-        while x <= W:
-            self._canvas.create_line(x, 0, x, H, fill=GRID_MINOR, tags="grid")
-            x += GRID
-        y = OY % GRID
-        while y <= H:
-            self._canvas.create_line(0, y, W, y, fill=GRID_MINOR, tags="grid")
-            y += GRID
+        W, H  = self._W, self._H
+        ox, oy = self._ox, self._oy
+        eff   = GRID * self._scale
+        if eff <= 0:
+            return
 
-        # Ejes
-        self._canvas.create_line(OX, 0,  OX, H,  fill=GRID_AXIS, width=1, tags="grid")
-        self._canvas.create_line(0,  OY, W,  OY, fill=GRID_AXIS, width=1, tags="grid")
+        # Intervalo adaptativo de etiquetas según densidad de píxeles
+        if eff >= 60:
+            interval = 1
+        elif eff >= 25:
+            interval = 5
+        elif eff >= 10:
+            interval = 10
+        else:
+            interval = 20
 
-        # Etiquetas de ejes
-        fnt = ("Consolas", 8)
-        for ux in range(0, (W - OX) // GRID + 1, 5):
-            px = OX + ux * GRID
-            self._canvas.create_text(px, OY + 12, text=str(ux), fill=GRID_AXIS, font=fnt, tags="grid")
-        for uy in range(0, OY // GRID + 1, 5):
-            py = OY - uy * GRID
-            if uy:
-                self._canvas.create_text(OX - 14, py, text=str(uy), fill=GRID_AXIS, font=fnt, tags="grid")
+        fnt = ("Consolas", max(7, min(10, int(8 * min(self._scale, 1.5)))))
+
+        # Líneas verticales (X constante)
+        n_min = int((-ox) / eff) - 1
+        n_max = int((W - ox) / eff) + 1
+        for n in range(n_min, n_max + 1):
+            px = ox + n * eff
+            color = GRID_AXIS if n == 0 else GRID_MINOR
+            width = 2 if n == 0 else 1
+            self._canvas.create_line(px, 0, px, H, fill=color, width=width, tags="grid")
+            if n != 0 and n % interval == 0 and 0 <= px <= W:
+                lbl_y = min(H - 10, max(10, oy + 12))
+                self._canvas.create_text(
+                    px, lbl_y, text=str(n), fill=GRID_AXIS, font=fnt, tags="grid")
+
+        # Líneas horizontales (Y constante)
+        m_min = int((oy - H) / eff) - 1
+        m_max = int(oy / eff) + 1
+        for m in range(m_min, m_max + 1):
+            py = oy - m * eff
+            color = GRID_AXIS if m == 0 else GRID_MINOR
+            width = 2 if m == 0 else 1
+            self._canvas.create_line(0, py, W, py, fill=color, width=width, tags="grid")
+            if m != 0 and m % interval == 0 and 0 <= py <= H:
+                lbl_x = min(W - 20, max(4, ox - 22))
+                self._canvas.create_text(
+                    lbl_x, py, text=str(m), fill=GRID_AXIS, font=fnt, tags="grid")
+
+        # Etiqueta del origen y rótulos de ejes
+        if 0 <= ox <= W and 0 <= oy <= H:
+            self._canvas.create_text(ox - 12, oy + 12, text="0",
+                                     fill=GRID_AXIS, font=fnt, tags="grid")
+        # X⁺ / X⁻
+        self._canvas.create_text(W - 6, max(oy, 10) - 8, text="X+",
+                                 fill=LABEL_FG, font=fnt, tags="grid", anchor="e")
+        self._canvas.create_text(max(ox - 2, 4), max(oy, 10) - 8, text="X−",
+                                 fill=GRID_AXIS, font=fnt, tags="grid", anchor="e")
+        # Y⁺ / Y⁻
+        self._canvas.create_text(min(ox + 4, W - 6), 10, text="Y+",
+                                 fill=LABEL_FG, font=fnt, tags="grid", anchor="w")
+        self._canvas.create_text(min(ox + 4, W - 6), H - 8, text="Y−",
+                                 fill=GRID_AXIS, font=fnt, tags="grid", anchor="w")
 
     # ── Dibujo de figuras ─────────────────────────────────────────────────────
 
     def _to_canvas(self, x: int, y: int) -> tuple:
-        """Convierte coordenadas lógicas a píxeles del canvas."""
-        return self._OX + x * GRID, self._OY - y * GRID
+        """Convierte coordenadas lógicas a píxeles del canvas (con zoom y pan)."""
+        eff = GRID * self._scale
+        return self._ox + x * eff, self._oy - y * eff
 
     @staticmethod
     def _rotate_pts(pts: List[float], cx: float, cy: float, deg: float) -> List[float]:
@@ -747,7 +810,7 @@ class CanvasView:
         if e.tipo == "group":
             return
         cx, cy  = self._to_canvas(*e.posicion)
-        sz      = max(e.escala * UNIT, 4)
+        sz      = max(e.escala * UNIT * self._scale, 4)
         outline = OUTLINE_DEF
         items: List[int] = []
 
@@ -792,7 +855,7 @@ class CanvasView:
 
         elif e.tipo == "line":
             color_linea = _parse_color(e.color, e.tipo) if e.visible else "#585b70"
-            kw_line = dict(fill=color_linea, width=max(2, e.escala * 2))
+            kw_line = dict(fill=color_linea, width=max(1, e.escala * 2 * self._scale))
             if dash:
                 kw_line["dash"] = dash
             cx2, cy2 = self._to_canvas(*e.pos_fin)
@@ -814,8 +877,8 @@ class CanvasView:
 
         elif e.tipo == "rectangle":
             # sz usa escala (ancho); param_extra guarda el alto
-            w_px = max(e.escala * UNIT, 4)
-            h_px = max((e.param_extra or e.escala) * UNIT, 4)
+            w_px = max(e.escala * UNIT * self._scale, 4)
+            h_px = max((e.param_extra or e.escala) * UNIT * self._scale, 4)
             pts = self._rotate_pts(
                 [cx - w_px, cy - h_px, cx + w_px, cy - h_px,
                  cx + w_px, cy + h_px, cx - w_px, cy + h_px],
@@ -828,8 +891,8 @@ class CanvasView:
 
         elif e.tipo == "ellipse":
             # escala = rx (radio horizontal), param_extra = ry (radio vertical)
-            rx_px = max(e.escala * UNIT, 4)
-            ry_px = max((e.param_extra or e.escala) * UNIT, 4)
+            rx_px = max(e.escala * UNIT * self._scale, 4)
+            ry_px = max((e.param_extra or e.escala) * UNIT * self._scale, 4)
             # Aproximar la elipse con un polígono de 36 puntos para soportar rotación
             raw_ellipse: List[float] = []
             for i in range(36):
@@ -842,7 +905,7 @@ class CanvasView:
             items.append(iid)
 
         elif e.tipo == "text":
-            font_size = max(8, e.escala * 2)
+            font_size = max(8, int(e.escala * 2 * self._scale))
             text_color = _parse_color(e.color, e.tipo) if e.visible else "#585b70"
             contenido = (e.contenido or '"texto"').strip('"')
             iid = self._canvas.create_text(
@@ -1002,3 +1065,187 @@ class CanvasView:
             self.write_console(f"ERROR INTERNO: {e}", "error")
         finally:
             self._entry.focus_force()
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ZOOM Y PAN
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _on_zoom(self, event: tk.Event) -> None:
+        """Zoom centrado en el punto del ratón (rueda del ratón)."""
+        if event.num == 5 or (hasattr(event, "delta") and event.delta < 0):
+            factor = 0.9
+        else:
+            factor = 1.1
+        mx, my = event.x, event.y
+        eff = GRID * self._scale
+        if eff == 0:
+            return
+        # Punto lógico bajo el cursor (antes de escalar)
+        lx = (mx - self._ox) / eff
+        ly = -(my - self._oy) / eff
+        # Actualizar escala con límites
+        self._scale = max(0.15, min(8.0, self._scale * factor))
+        new_eff = GRID * self._scale
+        # Reajustar origen para que lx,ly permanezca bajo el cursor
+        self._ox = int(mx - lx * new_eff)
+        self._oy = int(my + ly * new_eff)
+        self._canvas.delete("grid")
+        self._draw_grid()
+        if self._current_tabla:
+            self.actualizar(self._current_tabla)
+
+    def _on_pan_start(self, event: tk.Event) -> None:
+        """Inicia el pan al presionar el botón central."""
+        self._pan_start_pt = (event.x, event.y)
+
+    def _on_pan_move(self, event: tk.Event) -> None:
+        """Desplaza el origen mientras se arrastra con el botón central."""
+        if self._pan_start_pt is None:
+            return
+        dx = event.x - self._pan_start_pt[0]
+        dy = event.y - self._pan_start_pt[1]
+        self._ox += dx
+        self._oy += dy
+        self._pan_start_pt = (event.x, event.y)
+        self._canvas.delete("grid")
+        self._draw_grid()
+        if self._current_tabla:
+            self.actualizar(self._current_tabla)
+
+    def _reset_view(self) -> None:
+        """Restaura zoom y pan a los valores por defecto."""
+        self._scale = 1.0
+        self._ox = 70
+        self._oy = int(self._H * 0.6)
+        self._canvas.delete("grid")
+        self._draw_grid()
+        if self._current_tabla:
+            self.actualizar(self._current_tabla)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # EXPORTAR SVG / PNG
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _export_svg(self) -> None:
+        """Exporta el canvas como archivo SVG."""
+        from tkinter import filedialog
+        path = filedialog.asksaveasfilename(
+            defaultextension=".svg",
+            filetypes=[("SVG", "*.svg"), ("Todos los archivos", "*.*")],
+            title="Exportar como SVG",
+        )
+        if not path:
+            return
+        try:
+            svg = self._generate_svg()
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(svg)
+            self.write_console(f"  OK: SVG exportado → {path}", "ok")
+        except Exception as ex:
+            self.write_console(f"  Error al exportar SVG: {ex}", "error")
+
+    def _generate_svg(self) -> str:
+        """Genera el contenido SVG a partir de la tabla de figuras actual."""
+        W, H = max(400, self._W), max(300, self._H)
+        lines = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}">',
+            f'  <rect width="{W}" height="{H}" fill="{BG}"/>',
+        ]
+        figuras = []
+        if self._current_tabla:
+            figuras = [e for e in self._current_tabla.listar()
+                       if not e.eliminada and e.tipo != "group"]
+        for e in figuras:
+            cx, cy = self._to_canvas(*e.posicion)
+            fill   = _parse_color(e.color, e.tipo) if e.visible else "none"
+            stroke = OUTLINE_DEF
+            sz     = max(e.escala * UNIT * self._scale, 4)
+            if e.tipo == "circle":
+                lines.append(
+                    f'  <circle cx="{cx:.1f}" cy="{cy:.1f}" r="{sz:.1f}" '
+                    f'fill="{fill}" stroke="{stroke}" stroke-width="2"/>')
+            elif e.tipo == "square":
+                lines.append(
+                    f'  <rect x="{cx-sz:.1f}" y="{cy-sz:.1f}" '
+                    f'width="{sz*2:.1f}" height="{sz*2:.1f}" '
+                    f'fill="{fill}" stroke="{stroke}" stroke-width="2"/>')
+            elif e.tipo == "triangle":
+                pts = (f"{cx:.1f},{cy-sz:.1f} "
+                       f"{cx-sz:.1f},{cy+sz:.1f} "
+                       f"{cx+sz:.1f},{cy+sz:.1f}")
+                lines.append(
+                    f'  <polygon points="{pts}" fill="{fill}" stroke="{stroke}" stroke-width="2"/>')
+            elif e.tipo == "pentagon":
+                raw = []
+                for i in range(5):
+                    a = math.radians(-90 + i * 72)
+                    raw.append(f"{cx + sz*math.cos(a):.1f},{cy + sz*math.sin(a):.1f}")
+                lines.append(
+                    f'  <polygon points="{" ".join(raw)}" '
+                    f'fill="{fill}" stroke="{stroke}" stroke-width="2"/>')
+            elif e.tipo == "rectangle":
+                w_px = max(e.escala * UNIT * self._scale, 4)
+                h_px = max((e.param_extra or e.escala) * UNIT * self._scale, 4)
+                lines.append(
+                    f'  <rect x="{cx-w_px:.1f}" y="{cy-h_px:.1f}" '
+                    f'width="{w_px*2:.1f}" height="{h_px*2:.1f}" '
+                    f'fill="{fill}" stroke="{stroke}" stroke-width="2"/>')
+            elif e.tipo == "ellipse":
+                rx = max(e.escala * UNIT * self._scale, 4)
+                ry = max((e.param_extra or e.escala) * UNIT * self._scale, 4)
+                lines.append(
+                    f'  <ellipse cx="{cx:.1f}" cy="{cy:.1f}" '
+                    f'rx="{rx:.1f}" ry="{ry:.1f}" '
+                    f'fill="{fill}" stroke="{stroke}" stroke-width="2"/>')
+            elif e.tipo == "text":
+                fs   = max(8, int(e.escala * 2 * self._scale))
+                tc   = _parse_color(e.color, e.tipo) if e.visible else "#585b70"
+                cont = (e.contenido or '"texto"').strip('"')
+                cont = cont.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                lines.append(
+                    f'  <text x="{cx:.1f}" y="{cy:.1f}" fill="{tc}" '
+                    f'font-size="{fs}" font-family="monospace" '
+                    f'text-anchor="middle" dominant-baseline="middle">{cont}</text>')
+            elif e.tipo == "line" and e.pos_fin:
+                cx2, cy2 = self._to_canvas(*e.pos_fin)
+                sc = _parse_color(e.color, e.tipo) if e.visible else "#585b70"
+                sw = max(1, e.escala * 2 * self._scale)
+                lines.append(
+                    f'  <line x1="{cx:.1f}" y1="{cy:.1f}" '
+                    f'x2="{cx2:.1f}" y2="{cy2:.1f}" '
+                    f'stroke="{sc}" stroke-width="{sw:.1f}"/>')
+            # Etiqueta de ID
+            if e.tipo != "line":
+                lines.append(
+                    f'  <text x="{cx:.1f}" y="{cy+sz+16:.1f}" fill="{LABEL_FG}" '
+                    f'font-size="9" font-family="monospace" text-anchor="middle">{e.id}</text>')
+        lines.append("</svg>")
+        return "\n".join(lines)
+
+    def _export_png(self) -> None:
+        """Exporta el canvas como PNG (requiere Pillow: pip install Pillow)."""
+        from tkinter import filedialog
+        try:
+            from PIL import ImageGrab
+        except ImportError:
+            self.write_console("  Para exportar PNG instala Pillow:  pip install Pillow", "warn")
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".png",
+            filetypes=[("PNG", "*.png"), ("Todos los archivos", "*.*")],
+            title="Exportar como PNG",
+        )
+        if not path:
+            return
+        try:
+            self._root.update_idletasks()
+            x = self._canvas.winfo_rootx()
+            y = self._canvas.winfo_rooty()
+            w = self._canvas.winfo_width()
+            h = self._canvas.winfo_height()
+            img = ImageGrab.grab(bbox=(x, y, x + w, y + h))
+            img.save(path)
+            self.write_console(f"  OK: PNG exportado → {path}", "ok")
+        except Exception as ex:
+            self.write_console(f"  Error al exportar PNG: {ex}", "error")

@@ -227,6 +227,13 @@ class ScaleNode:
     factor: int   # multiplicador relativo (> 0); nueva_escala = escala_actual * factor
 
 
+@dataclass
+class SetNode:
+    """Asignar variable: set <nombre> <valor>  (entero o cadena de color)"""
+    nombre: str            # nombre de la variable (letras)
+    valor:  Union[int, str]  # entero o lexema de color (STRING / NUM_HEX)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # NODO RAÍZ
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -235,6 +242,7 @@ ComandoNode = Union[
     CreateNode, UpdateNode, DeleteNode,
     ShowNode, HideNode, ListNode, ClearNode, HelpNode,
     RotateNode, MoveNode, CopyNode, GroupNode, UngroupNode, ScaleNode,
+    SetNode,
 ]
 
 

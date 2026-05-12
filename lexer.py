@@ -26,6 +26,7 @@ class TipoToken(Enum):
     NUM_DEC           = "NUM_DEC"
     NUM_HEX           = "NUM_HEX"
     STRING            = "STRING"
+    NOMBRE_VAR        = "NOMBRE_VAR"    # nombre de variable (set x 10)
     LPAREN            = "LPAREN"
     RPAREN            = "RPAREN"
     LBRACKET          = "LBRACKET"
@@ -62,6 +63,7 @@ class Estado(Enum):
     QID3 = "qID3"   # 3er dígito
     QID4 = "qID4"   # 4to dígito  →  listo para emitir en delimitador
     QD   = "qD"     # leyendo dígitos decimales
+    QNEG = "qNEG"   # después de '-': espera dígito para número negativo
     QH   = "qH"     # después de '#'
     QH1  = "qH1"    # leyendo dígitos hexadecimales
     QS   = "qS"     # dentro de string literal
@@ -80,6 +82,7 @@ class CC(Enum):
     DIGIT     = "digit"       # 0-9
     HASH      = "hash"        # #
     QUOTE     = "quote"       # "
+    MINUS     = "minus"       # -  (prefijo de número negativo)
     LPAREN    = "lparen"      # (
     RPAREN    = "rparen"      # )
     LBRACKET  = "lbracket"    # [
@@ -117,7 +120,7 @@ def _cc(c: Optional[str]) -> CC:
     if c.isalpha():       return CC.LETTER
     if c.isdigit():       return CC.DIGIT
     _MAP: Dict[str, CC] = {
-        '#': CC.HASH,     '"': CC.QUOTE,
+        '#': CC.HASH,     '"': CC.QUOTE,    '-': CC.MINUS,
         '(': CC.LPAREN,   ')': CC.RPAREN,
         '[': CC.LBRACKET, ']': CC.RBRACKET,
         ',': CC.COMMA,    '_': CC.UNDER,
@@ -142,6 +145,7 @@ _TABLA: Dict[Tuple[Estado, CC], Estado] = {
     (Estado.Q0, CC.DIGIT):     Estado.QD,
     (Estado.Q0, CC.HASH):      Estado.QH,
     (Estado.Q0, CC.QUOTE):     Estado.QS,
+    (Estado.Q0, CC.MINUS):     Estado.QNEG,  # prefijo de número negativo
     (Estado.Q0, CC.LPAREN):    Estado.QSYM,
     (Estado.Q0, CC.RPAREN):    Estado.QSYM,
     (Estado.Q0, CC.LBRACKET):  Estado.QSYM,
@@ -151,6 +155,9 @@ _TABLA: Dict[Tuple[Estado, CC], Estado] = {
     (Estado.Q0, CC.SPACE):     Estado.Q0,    # espacio: permanecer en q0
     (Estado.Q0, CC.NEWLINE):   Estado.Q0,    # nueva línea: permanecer en q0
     # OTHER → QE (implícito)
+
+    # ── qNEG: prefijo negativo ────────────────────────────────────────────────
+    (Estado.QNEG, CC.DIGIT): Estado.QD,     # '-' + dígito → número negativo
 
     # ── qL: leyendo letras ────────────────────────────────────────────────────
     (Estado.QL, CC.HEX_ALPHA): Estado.QL,
@@ -196,6 +203,7 @@ _RESERVADAS: FrozenSet[str] = frozenset({
     "create", "update", "delete", "show",    "hide",
     "list",   "clear",  "screen", "help",    "rotate",
     "move",   "copy",   "group",  "ungroup", "scale",
+    "set",    # asignación de variable entera
 })
 
 _TIPOS_FIGURA: FrozenSet[str] = frozenset({
@@ -373,17 +381,8 @@ class Lexer:
             return Token(TipoToken.PALABRA_RESERVADA, lexema, lin, col)
         if lexema in _TIPOS_FIGURA:
             return Token(TipoToken.TIPO_FIGURA, lexema, lin, col)
-        self.errores.append(ErrorLexico(
-            "L001", f"palabra desconocida: {lexema!r}", lin, col,
-            sugerencia=(
-                "Palabras reservadas: create update delete show hide list clear screen help "
-                "rotate move copy group ungroup scale. "
-                "Tipos de figura: circle  square  triangle  line  pentagon  "
-                "rectangle  ellipse  text"
-            ),
-            col_fin=col + len(lexema) - 1,
-        ))
-        return None
+        # Nombre de variable: cualquier otra secuencia de letras
+        return Token(TipoToken.NOMBRE_VAR, lexema, lin, col)
 
     def _mk_identificador(self, lexema: str, lin: int, col: int) -> Optional[Token]:
         """

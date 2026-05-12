@@ -39,7 +39,7 @@ from ast_nodes import (
     ProgramaNode, ComandoNode,
     CreateNode, UpdateNode, DeleteNode,
     ShowNode, HideNode, ListNode, ClearNode, HelpNode, RotateNode,
-    MoveNode, CopyNode, GroupNode, UngroupNode, ScaleNode,
+    MoveNode, CopyNode, GroupNode, UngroupNode, ScaleNode, SetNode,
     ParametrosLineaNode, ParametrosUpdateNode, ParametrosUpdateLineaNode, ValorUpdateNode,
     ParametrosRectanguloNode, ParametrosElipseNode, ParametrosTextoNode,
     ParametrosUpdateRectanguloNode, ParametrosUpdateElipseNode, ParametrosUpdateTextoNode,
@@ -115,6 +115,7 @@ class AnalizadorSemantico:
             GroupNode:   self._check_group,
             UngroupNode: self._check_ungroup,
             ScaleNode:   self._check_scale,
+            SetNode:     self._check_set,
         }
 
     # ── API pública ───────────────────────────────────────────────────────────
@@ -457,6 +458,10 @@ class AnalizadorSemantico:
                 nueva_extra = entrada.param_extra * nodo.factor
                 self._validar_escala(nueva_extra)
                 entrada.param_extra = nueva_extra
+
+    def _check_set(self, nodo: SetNode) -> None:
+        """set <nombre> <valor> — la variable se almacena en el executor; sin tabla de símbolos."""
+        pass  # variables son escalares enteros; validación ya realizada en el parser
 
     # ── Utilidades de validación ──────────────────────────────────────────────
     def _expandir_ids(self, id: str) -> List[EntradaFigura]:
