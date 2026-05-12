@@ -27,9 +27,7 @@ from tabla_simbolos import EntradaFigura, TablaSimbolos
 # CONSTANTES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-W, H   = 920, 620          # tamaño del canvas en píxeles
-OX     = 70                # columna del origen en canvas  (px desde izq.)
-OY     = 550               # fila del origen en canvas     (px desde arriba)
+# W, H, OX, OY se calculan en CanvasView.__init__ según la resolución de pantalla
 GRID   = 20                # píxeles por unidad de posición
 UNIT   = 15                # píxeles base para escala = 1
 
@@ -105,7 +103,19 @@ class CanvasView:
         root.title("Figuras Geométricas — intérprete")
         root.configure(bg=STATUS_BG)
         root.resizable(True, True)
-        root.minsize(W + 20, 680)
+
+        # ── Dimensiones iniciales basadas en la resolución de pantalla ────────
+        sw = root.winfo_screenwidth()
+        sh = root.winfo_screenheight()
+        self._W  = int(sw * 0.65)
+        self._H  = int(sh * 0.75)
+        self._OX = 70
+        self._OY = int(self._H * 0.88)
+        self._current_tabla: Optional[TablaSimbolos] = None
+
+        # Ventana: casi pantalla completa
+        root.geometry(f"{sw - 60}x{sh - 80}")
+        root.minsize(800, 480)
 
         # ── Estilo del Notebook ───────────────────────────────────────────────
         style = ttk.Style(root)
@@ -120,17 +130,24 @@ class CanvasView:
                   foreground=[("selected", "#cdd6f4")])
         style.configure("TPane.TFrame", background=STATUS_BG)
 
-        # ══ Packing del fondo hacia arriba para que expand sea correcto ═════════
-        # 1. Consola integrada — ancla al fondo absoluto
-        con_frame = tk.Frame(root, bg="#11111b")
-        con_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        # ── Layout principal: Notebook izquierda | Consola derecha ───────────
+        main = tk.Frame(root, bg=STATUS_BG)
+        main.pack(fill=tk.BOTH, expand=True)
+
+        # Panel derecho: consola
+        con_frame = tk.Frame(main, bg="#11111b", width=340)
+        con_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        con_frame.pack_propagate(False)
         self._build_console(con_frame)
 
-        # 3. Marco superior con Notebook — ocupa todo el espacio restante
-        top_frame = tk.Frame(root, bg=STATUS_BG)
-        top_frame.pack(fill=tk.BOTH, expand=True)
+        # Separador vertical
+        tk.Frame(main, bg="#313244", width=1).pack(side=tk.RIGHT, fill=tk.Y)
 
-        self._nb = ttk.Notebook(top_frame)
+        # Panel izquierdo: Notebook (ocupa el resto)
+        left = tk.Frame(main, bg=STATUS_BG)
+        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self._nb = ttk.Notebook(left)
         self._nb.pack(fill=tk.BOTH, expand=True)
 
         # ── Pestaña 1: Canvas ─────────────────────────────────────────────────
@@ -138,10 +155,11 @@ class CanvasView:
         self._nb.add(tab_canvas, text="  Canvas  ")
 
         self._canvas = tk.Canvas(
-            tab_canvas, width=W, height=H,
+            tab_canvas,
             bg=BG, highlightthickness=0,
         )
-        self._canvas.pack(side=tk.TOP)
+        self._canvas.pack(fill=tk.BOTH, expand=True)
+        self._canvas.bind("<Configure>", self._on_canvas_resize)
         self._draw_grid()
 
         # ── Pestaña 2: Historial ──────────────────────────────────────────────
@@ -252,6 +270,7 @@ class CanvasView:
 
     def actualizar(self, tabla: TablaSimbolos) -> None:
         """Re-dibuja el canvas con el estado actual de la tabla."""
+        self._current_tabla = tabla
         for item_ids in self._items.values():
             for iid in item_ids:
                 self._canvas.delete(iid)
@@ -515,7 +534,18 @@ class CanvasView:
     # CANVAS — grid y dibujo
     # ═══════════════════════════════════════════════════════════════════════════
 
+    def _on_canvas_resize(self, event: tk.Event) -> None:
+        """Actualiza dimensiones y redibuja cuando el canvas cambia de tamaño."""
+        self._W  = event.width
+        self._H  = event.height
+        self._OY = int(self._H * 0.88)
+        self._canvas.delete("grid")
+        self._draw_grid()
+        if self._current_tabla is not None:
+            self.actualizar(self._current_tabla)
+
     def _draw_grid(self) -> None:
+        W, H, OX, OY = self._W, self._H, self._OX, self._OY
         # Líneas menores
         x = OX
         while x <= W:
@@ -544,7 +574,7 @@ class CanvasView:
 
     def _to_canvas(self, x: int, y: int) -> tuple:
         """Convierte coordenadas lógicas a píxeles del canvas."""
-        return OX + x * GRID, OY - y * GRID
+        return self._OX + x * GRID, self._OY - y * GRID
 
     def _dibujar(self, e: EntradaFigura) -> None:
         cx, cy  = self._to_canvas(*e.posicion)
@@ -626,14 +656,18 @@ class CanvasView:
         """Construye la consola de salida (ScrolledText) + Entry de entrada."""
         from tkinter.scrolledtext import ScrolledText
 
-        # Separador visual entre Notebook y consola
+        # Título del panel
+        tk.Label(
+            parent, text=" CONSOLA",
+            bg="#11111b", fg="#585b70",
+            font=("Consolas", 9, "bold"), anchor="w",
+        ).pack(fill=tk.X, padx=4, pady=(4, 0))
         tk.Frame(parent, bg="#313244", height=1).pack(fill=tk.X)
 
-        # ── Área de salida ────────────────────────────────────────────────────
+        # ── Área de salida (crece verticalmente) ──────────────────────────────
         self._console = ScrolledText(
             parent,
             wrap=tk.WORD,
-            height=8,
             bg="#0d0d17",
             fg="#cdd6f4",
             insertbackground="#cdd6f4",
@@ -643,7 +677,7 @@ class CanvasView:
             highlightthickness=0,
             selectbackground="#313244",
         )
-        self._console.pack(fill=tk.X, padx=0, pady=0)
+        self._console.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
 
         # Tags de colores para la consola
         self._console.tag_config("cmd",   foreground="#89b4fa",  font=("Consolas", 10, "bold"))
