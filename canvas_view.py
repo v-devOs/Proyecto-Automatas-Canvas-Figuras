@@ -211,6 +211,11 @@ class CanvasView:
         self._nb.add(tab_ast, text="  AST  ")
         self._build_ast_tab(tab_ast)
 
+        # ── Pestaña 4: Referencia ─────────────────────────────────────────────
+        tab_ref = tk.Frame(self._nb, bg=STATUS_BG)
+        self._nb.add(tab_ref, text="  Referencia  ")
+        self._build_ref_tab(tab_ref)
+
         # ── Callback de comandos + registro de figuras ────────────────────────
         self._cmd_callback = None
         self._items: Dict[str, List[int]] = {}
@@ -416,6 +421,359 @@ class CanvasView:
             self._txt_append(w,
                 f"{e.color:<10} {e.escala:<5} {str(list(e.posicion)):<12} ")
             self._txt_append(w, f"{estado_txt}\n", estado_tag)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PESTAÑA REFERENCIA — referencia rápida de comandos con ejemplos
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # Referencia dinámica: { etiqueta_listbox: [(tag, texto), ...] }
+    _REF_SECTIONS: "Dict[str, List[tuple]]" = {
+        "📋  Todos": [],   # se rellena en _build_ref_tab
+        "⬡  circle": [
+            ("syn",  "  create circle"),
+            ("desc", "  Crea un círculo con valores por defecto."),
+            ("ex",   '  create circle'),
+            ("",     ""),
+            ("syn",  '  create circle(color, escala, [x, y])'),
+            ("desc", "  color: string o hex   escala: radio en unidades   [x,y]: posición"),
+            ("ex",   '  create circle("red", 3, [0, 0])'),
+            ("ex",   '  create circle(#89b4fa, 5, [-4, 2])'),
+            ("",     ""),
+            ("syn",  '  update circle0001(color, escala, [x, y])'),
+            ("desc", "  Modifica uno o más campos. Usa _ para conservar el valor actual."),
+            ("ex",   '  update circle0001("blue", _, _)'),
+            ("ex",   '  update circle0001(_, 4, [1, -3])'),
+        ],
+        "■  square": [
+            ("syn",  "  create square"),
+            ("syn",  "  create square(color, escala, [x, y])"),
+            ("desc", "  escala: lado del cuadrado en unidades"),
+            ("ex",   '  create square("green", 3, [2, 2])'),
+            ("ex",   '  create square(#a6e3a1, 5, [0, 0])'),
+            ("",     ""),
+            ("syn",  "  update square0001(color, escala, [x, y])"),
+            ("ex",   '  update square0001(_, 6, _)'),
+        ],
+        "▲  triangle": [
+            ("syn",  "  create triangle"),
+            ("syn",  "  create triangle(color, escala, [x, y])"),
+            ("desc", "  escala: altura del triángulo equilátero"),
+            ("ex",   '  create triangle("blue", 4, [0, 0])'),
+            ("ex",   '  create triangle(#f9e2af, 3, [-5, -5])'),
+            ("",     ""),
+            ("syn",  "  rotate triangle0001 (grados)"),
+            ("desc", "  Rota en sentido antihorario."),
+            ("ex",   "  rotate triangle0001 (45)"),
+            ("ex",   "  rotate triangle0001 (90)"),
+        ],
+        "—  line": [
+            ("syn",  "  create line"),
+            ("syn",  "  create line(color, grosor, [x1, y1], [x2, y2])"),
+            ("desc", "  Segmento de línea entre dos puntos."),
+            ("ex",   '  create line("white", 1, [-5, 0], [5, 0])'),
+            ("ex",   '  create line(#f38ba8, 2, [0, -4], [0, 4])'),
+            ("",     ""),
+            ("syn",  "  update line0001(color, grosor, [x1,y1], [x2,y2])"),
+            ("ex",   '  update line0001(_, 3, _, _)'),
+        ],
+        "⬠  pentagon": [
+            ("syn",  "  create pentagon"),
+            ("syn",  "  create pentagon(color, escala, [x, y])"),
+            ("desc", "  escala: radio circunscrito del pentágono"),
+            ("ex",   '  create pentagon("purple", 3, [0, 0])'),
+            ("ex",   '  create pentagon(#cba6f7, 4, [3, -2])'),
+            ("",     ""),
+            ("syn",  "  rotate pentagon0001 (grados)"),
+            ("ex",   "  rotate pentagon0001 (36)"),
+        ],
+        "▭  rectangle": [
+            ("syn",  "  create rectangle"),
+            ("syn",  "  create rectangle(color, ancho, alto, [x, y])"),
+            ("desc", "  ancho y alto son independientes."),
+            ("ex",   '  create rectangle("red", 8, 3, [0, 0])'),
+            ("ex",   '  create rectangle(#fab387, 6, 4, [-2, 1])'),
+            ("",     ""),
+            ("syn",  "  update rectangle0001(color, ancho, alto, [x, y])"),
+            ("ex",   '  update rectangle0001(_, 10, 2, _)'),
+        ],
+        "⬭  ellipse": [
+            ("syn",  "  create ellipse"),
+            ("syn",  "  create ellipse(color, rx, ry, [x, y])"),
+            ("desc", "  rx: radio horizontal   ry: radio vertical"),
+            ("ex",   '  create ellipse(#94e2d5, 5, 2, [0, 0])'),
+            ("ex",   '  create ellipse("salmon", 3, 6, [4, -1])'),
+            ("",     ""),
+            ("syn",  "  update ellipse0001(color, rx, ry, [x, y])"),
+            ("ex",   '  update ellipse0001(_, 7, 3, _)'),
+        ],
+        "T  text": [
+            ("syn",  "  create text"),
+            ("syn",  '  create text(color, tamaño, [x, y], "contenido")'),
+            ("desc", "  tamaño: escala de la fuente   contenido: texto entre comillas"),
+            ("ex",   '  create text("white", 3, [0, 0], "Hola Mundo")'),
+            ("ex",   '  create text(#cdd6f4, 2, [-3, 4], "Canvas")'),
+            ("",     ""),
+            ("syn",  '  update text0001(color, tamaño, [x, y], "nuevo texto")'),
+            ("ex",   '  update text0001(_, _, _, "Otro texto")'),
+        ],
+        "✎  create": [
+            ("syn",  "  create <tipo>"),
+            ("desc", "  Crea una figura con valores por defecto."),
+            ("ex",   "  create circle"),
+            ("ex",   "  create square   /   create triangle   /   create line"),
+            ("",     ""),
+            ("syn",  "  create <tipo>(color, escala, [x, y])"),
+            ("desc", "  Forma general para circle, square, triangle, pentagon."),
+            ("ex",   '  create circle("red", 3, [0, 0])'),
+            ("",     ""),
+            ("syn",  "  create line(color, grosor, [x1,y1], [x2,y2])"),
+            ("ex",   '  create line("white", 1, [-5,0], [5,0])'),
+            ("",     ""),
+            ("syn",  "  create rectangle(color, ancho, alto, [x, y])"),
+            ("ex",   '  create rectangle("blue", 6, 3, [0, 0])'),
+            ("",     ""),
+            ("syn",  "  create ellipse(color, rx, ry, [x, y])"),
+            ("ex",   '  create ellipse(#89b4fa, 4, 2, [0, 0])'),
+            ("",     ""),
+            ("syn",  '  create text(color, sz, [x, y], "texto")'),
+            ("ex",   '  create text("white", 2, [0, 0], "Hola")'),
+        ],
+        "✏  update": [
+            ("desc", "  Modifica uno o más campos de una figura existente."),
+            ("desc", "  Usa _ en cualquier posición para conservar el valor actual."),
+            ("",     ""),
+            ("syn",  "  update <id>(color, escala, [x, y])"),
+            ("desc", "  Para: circle, square, triangle, pentagon"),
+            ("ex",   '  update circle0001("blue", _, _)'),
+            ("ex",   '  update square0001(_, 5, [3, 3])'),
+            ("",     ""),
+            ("syn",  "  update <rect_id>(color, ancho, alto, [x, y])"),
+            ("ex",   '  update rectangle0001(_, 8, 4, _)'),
+            ("",     ""),
+            ("syn",  "  update <ellipse_id>(color, rx, ry, [x, y])"),
+            ("ex",   '  update ellipse0001(_, 6, 2, _)'),
+            ("",     ""),
+            ("syn",  '  update <text_id>(color, sz, [x, y], "txt")'),
+            ("ex",   '  update text0001(_, _, _, "Nuevo texto")'),
+            ("",     ""),
+            ("syn",  "  update <line_id>(color, grosor, [x1,y1], [x2,y2])"),
+            ("ex",   '  update line0001(#ff0000, _, _, _)'),
+        ],
+        "↔  move": [
+            ("syn",  "  move <id> (dx, dy)"),
+            ("desc", "  Desplaza la figura por un offset relativo (dx, dy)."),
+            ("desc", "  dx y dy pueden ser negativos. También funciona sobre grupos."),
+            ("ex",   "  move circle0001 (3, -2)"),
+            ("ex",   "  move rectangle0001 (-5, 0)"),
+            ("ex",   "  move group0001 (1, 1)"),
+        ],
+        "↻  rotate": [
+            ("syn",  "  rotate <id> (grados)"),
+            ("desc", "  Rota la figura en sentido antihorario."),
+            ("desc", "  El ángulo total se acumula. También funciona sobre grupos."),
+            ("ex",   "  rotate triangle0001 (45)"),
+            ("ex",   "  rotate square0001 (90)"),
+            ("ex",   "  rotate group0001 (30)"),
+        ],
+        "⤢  scale": [
+            ("syn",  "  scale <id> (factor)"),
+            ("desc", "  Multiplica la escala actual por factor (entero > 0)."),
+            ("desc", "  También funciona sobre grupos."),
+            ("ex",   "  scale circle0001 (2)"),
+            ("ex",   "  scale group0001 (3)"),
+        ],
+        "⧉  copy": [
+            ("syn",  "  copy <id>"),
+            ("desc", "  Duplica la figura con un ID nuevo."),
+            ("desc", "  La copia aparece con un ligero desplazamiento."),
+            ("ex",   "  copy circle0001"),
+            ("ex",   "  copy rectangle0001"),
+        ],
+        "👁  show / hide": [
+            ("syn",  "  show <id>   /   hide <id>"),
+            ("desc", "  Muestra u oculta una figura o grupo completo."),
+            ("desc", "  Las figuras ocultas no se dibujan pero siguen en la tabla."),
+            ("ex",   "  hide circle0001"),
+            ("ex",   "  show circle0001"),
+            ("ex",   "  hide group0001"),
+        ],
+        "✕  delete": [
+            ("syn",  "  delete <id>"),
+            ("desc", "  Elimina la figura o grupo permanentemente."),
+            ("ex",   "  delete circle0001"),
+            ("ex",   "  delete group0001"),
+        ],
+        "⊞  group": [
+            ("syn",  "  group <id1> <id2> ..."),
+            ("desc", "  Agrupa dos o más figuras bajo un nuevo ID de grupo."),
+            ("desc", "  move, rotate, scale, show, hide y delete operan sobre el grupo completo."),
+            ("ex",   "  group circle0001 square0001"),
+            ("ex",   "  group circle0001 triangle0001 pentagon0001"),
+            ("",     ""),
+            ("syn",  "  ungroup <gid>"),
+            ("desc", "  Disuelve el grupo. Las figuras miembro se conservan."),
+            ("ex",   "  ungroup group0001"),
+        ],
+        "𝑥  set (variables)": [
+            ("desc", "  Las variables se pueden usar en lugar de literales en cualquier comando."),
+            ("",     ""),
+            ("syn",  "  set <nombre> <entero>"),
+            ("desc", "  Variable entera (positiva o negativa)."),
+            ("ex",   "  set x 5"),
+            ("ex",   "  set y -3"),
+            ("ex",   "  set radio 4"),
+            ("",     ""),
+            ("syn",  '  set <nombre> "color"'),
+            ("desc", "  Variable de color como nombre CSS."),
+            ("ex",   '  set primario "red"'),
+            ("ex",   '  set fondo "darkblue"'),
+            ("",     ""),
+            ("syn",  "  set <nombre> #hexadecimal"),
+            ("desc", "  Variable de color como valor hexadecimal."),
+            ("ex",   "  set acento #ff6600"),
+            ("ex",   "  set rosa #ff69b4"),
+            ("",     ""),
+            ("desc", "  Usar variables en comandos:"),
+            ("ex",   "  create circle(primario, radio, [x, y])"),
+            ("ex",   "  create ellipse(acento, radio, 2, [0, 0])"),
+            ("ex",   "  move circle0001 (x, y)"),
+            ("ex",   "  scale square0001 (radio)"),
+        ],
+        "🗒  list / clear": [
+            ("syn",  "  list"),
+            ("desc", "  Muestra todas las figuras activas en la consola."),
+            ("ex",   "  list"),
+            ("",     ""),
+            ("syn",  "  clear screen"),
+            ("desc", "  Elimina todas las figuras y vacía el canvas."),
+            ("ex",   "  clear screen"),
+        ],
+        "🖥  canvas (controles)": [
+            ("desc", "  Rueda del ratón         →  zoom acercar / alejar"),
+            ("desc", "  Botón medio + arrastrar →  desplazar vista (pan)"),
+            ("desc", "  Botón ⊛ Reset           →  restaurar zoom y posición"),
+            ("desc", "  Botón SVG               →  exportar a archivo .svg"),
+            ("desc", "  Botón PNG               →  exportar a imagen .png (requiere Pillow)"),
+        ],
+        "🎨  colores": [
+            ("desc", "  Se aceptan tres formatos:"),
+            ("",     ""),
+            ("syn",  '  "nombre CSS"'),
+            ("ex",   '  "red"   "blue"   "green"   "salmon"   "gold"   "white"'),
+            ("ex",   '  "darkblue"   "tomato"   "orchid"   "teal"   "lime"'),
+            ("",     ""),
+            ("syn",  "  #RRGGBB"),
+            ("ex",   "  #ff0000   #00bfff   #123456   #89b4fa   #a6e3a1"),
+            ("",     ""),
+            ("syn",  "  variable de color"),
+            ("ex",   '  set c "red"   →  create circle(c, 3, [0,0])'),
+            ("ex",   "  set h #ff6600  →  create square(h, 2, [0,0])"),
+        ],
+    }
+
+    def _build_ref_tab(self, parent: tk.Frame) -> None:
+        """Construye el panel de referencia dinámica con listbox de categorías."""
+        # Rellenar la sección "Todos" concatenando todas las demás
+        all_items: "List[tuple]" = []
+        for key, rows in self._REF_SECTIONS.items():
+            if key == "📋  Todos":
+                continue
+            label = key.split("  ", 1)[-1]   # quitar icono
+            all_items += [("sec", f"══  {label.upper()}  " + "═" * max(0, 50 - len(label)))]
+            all_items += rows
+            all_items += [("", "")]
+        self._REF_SECTIONS["📋  Todos"] = all_items
+
+        # ── Layout: listbox izquierda | detalle derecha ──────────────────────
+        pane = tk.PanedWindow(parent, orient=tk.HORIZONTAL,
+                              bg="#313244", sashwidth=3, relief=tk.FLAT)
+        pane.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+
+        # Panel izquierdo — lista de categorías
+        left = tk.Frame(pane, bg=STATUS_BG)
+        pane.add(left, width=170, minsize=130, stretch="never")
+
+        tk.Label(left, text=" Categoría",
+                 bg=STATUS_BG, fg="#7f849c",
+                 font=("Consolas", 9, "bold"), anchor="w",
+                 ).pack(fill=tk.X, padx=4, pady=(4, 2))
+
+        lb_frame = tk.Frame(left, bg=STATUS_BG)
+        lb_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
+
+        lb_scroll = tk.Scrollbar(lb_frame, orient=tk.VERTICAL, bg="#313244")
+        lb_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self._ref_lb = tk.Listbox(
+            lb_frame,
+            bg="#11111b", fg=LABEL_FG,
+            selectbackground="#45475a", selectforeground="#cdd6f4",
+            font=("Consolas", 9),
+            relief=tk.FLAT, highlightthickness=0,
+            activestyle="none",
+            yscrollcommand=lb_scroll.set,
+            exportselection=False,
+        )
+        self._ref_lb.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        lb_scroll.config(command=self._ref_lb.yview)
+
+        for key in self._REF_SECTIONS:
+            self._ref_lb.insert(tk.END, f"  {key}")
+
+        # Panel derecho — detalle
+        right = tk.Frame(pane, bg=STATUS_BG)
+        pane.add(right, stretch="always", minsize=200)
+
+        tk.Label(right, text=" Detalle",
+                 bg=STATUS_BG, fg="#7f849c",
+                 font=("Consolas", 9, "bold"), anchor="w",
+                 ).pack(fill=tk.X, padx=4, pady=(4, 2))
+
+        detail_frame = tk.Frame(right, bg=STATUS_BG)
+        detail_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
+
+        det_scroll_y = tk.Scrollbar(detail_frame, orient=tk.VERTICAL)
+        det_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self._ref_txt = tk.Text(
+            detail_frame,
+            bg="#11111b", fg=LABEL_FG,
+            font=("Consolas", 10),
+            state=tk.DISABLED,
+            yscrollcommand=det_scroll_y.set,
+            wrap=tk.WORD,
+            relief=tk.FLAT,
+            highlightthickness=1,
+            highlightbackground="#313244",
+            cursor="arrow",
+            padx=8, pady=6,
+        )
+        self._ref_txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        det_scroll_y.config(command=self._ref_txt.yview)
+
+        # Tags de color en el detalle
+        self._ref_txt.tag_config("sec",  foreground="#585b70", font=("Consolas", 9, "bold"))
+        self._ref_txt.tag_config("syn",  foreground="#89b4fa", font=("Consolas", 10, "bold"))
+        self._ref_txt.tag_config("desc", foreground="#a6adc8", font=("Consolas", 9))
+        self._ref_txt.tag_config("ex",   foreground="#a6e3a1", font=("Consolas", 9))
+
+        def _on_select(event=None) -> None:
+            sel = self._ref_lb.curselection()
+            if not sel:
+                return
+            key = list(self._REF_SECTIONS.keys())[sel[0]]
+            rows = self._REF_SECTIONS[key]
+            self._ref_txt.configure(state=tk.NORMAL)
+            self._ref_txt.delete("1.0", tk.END)
+            for tag, line in rows:
+                self._ref_txt.insert(tk.END, line + "\n", tag or "desc")
+            self._ref_txt.configure(state=tk.DISABLED)
+
+        self._ref_lb.bind("<<ListboxSelect>>", _on_select)
+
+        # Seleccionar la primera entrada por defecto
+        self._ref_lb.selection_set(0)
+        _on_select()
 
     # ═══════════════════════════════════════════════════════════════════════════
     # PESTAÑA AST — construcción y actualización
