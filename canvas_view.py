@@ -185,7 +185,7 @@ class CanvasView:
         tk.Button(toolbar, text="SVG",      command=self._export_svg,  **_btn_kw).pack(side=tk.LEFT, padx=2)
         tk.Button(toolbar, text="PNG",      command=self._export_png,  **_btn_kw).pack(side=tk.LEFT, padx=2)
         tk.Button(toolbar, text="⊛ Reset", command=self._reset_view,  **_btn_kw).pack(side=tk.LEFT, padx=8)
-        tk.Label(toolbar, text="  Rueda: zoom | Botón medio: pan",
+        tk.Label(toolbar, text="  Rueda: zoom | Click izquierdo: pan",
                  bg=STATUS_BG, fg=GRID_AXIS, font=("Consolas", 8)).pack(side=tk.LEFT, padx=6)
 
         self._canvas = tk.Canvas(
@@ -199,6 +199,8 @@ class CanvasView:
         self._canvas.bind("<Button-5>",     self._on_zoom)          # Linux scroll ↓
         self._canvas.bind("<ButtonPress-2>",self._on_pan_start)     # botón medio
         self._canvas.bind("<B2-Motion>",    self._on_pan_move)
+        self._canvas.bind("<ButtonPress-1>",self._on_pan_start)     # botón izquierdo
+        self._canvas.bind("<B1-Motion>",    self._on_pan_move)
         self._draw_grid()
 
         # ── Pestaña 2: Historial ──────────────────────────────────────────────
