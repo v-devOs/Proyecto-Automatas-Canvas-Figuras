@@ -1,36 +1,3 @@
-"""
-semantico.py — Analizador Semántico · Lenguaje de Figuras Geométricas
-
-Recorre el AST validado por el parser y aplica las reglas semánticas.
-NUNCA consume tokens directamente; opera exclusivamente sobre nodos AST.
-
-Reglas implementadas:
-  create  → M002 si el id ya existe (no eliminado)
-             M004 si escala ≤ 0
-  update  → M001 si la figura no existe
-             M005 si la figura está eliminada
-             M007 si el objetivo es un grupo
-             M003 si el tipo del valor no corresponde al slot
-             M004 si la nueva escala ≤ 0
-  delete  → M001 si no existe / M005 si ya eliminada
-  show    → M001/M005; cascada si es un grupo
-  hide    → M001/M005; cascada si es un grupo
-  rotate  → M001/M005; cascada si es un grupo
-  move    → M001/M005; cascada si es un grupo; desplazamiento relativo
-  copy    → M001/M005/M007 si el origen es un grupo
-  group   → M001/M005 por cada miembro; M007 si el miembro ya es un grupo
-  ungroup → M001/M005/M008 si el ID no es un grupo
-  scale   → M001/M005; cascada si es un grupo; M004 si nueva escala ≤ 0
-  list    → sin validación semántica
-  clear   → vacía la tabla
-  help    → sin validación semántica
-
-Valores por defecto de create sin parámetros:
-  color    = "white"
-  escala   = 1
-  posicion = (0, 0)
-"""
-
 from __future__ import annotations
 
 from typing import List, Optional, Tuple

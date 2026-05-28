@@ -31,27 +31,27 @@ from tabla_simbolos import EntradaFigura, TablaSimbolos
 GRID   = 20                # píxeles por unidad de posición
 UNIT   = 15                # píxeles base para escala = 1
 
-# ── Paleta (Catppuccin Mocha) ─────────────────────────────────────────────────
-BG          = "#1e1e2e"
-GRID_MINOR  = "#313244"
-GRID_AXIS   = "#585b70"
-LABEL_FG    = "#cdd6f4"
-STATUS_BG   = "#181825"
-STATUS_OK   = "#a6e3a1"
-STATUS_WARN = "#f9e2af"
-STATUS_ERR  = "#f38ba8"
-OUTLINE_DEF = "#cdd6f4"
+# ── Paleta (Catppuccin Latte — tema claro) ───────────────────────────────────────
+BG          = "#eff1f5"
+GRID_MINOR  = "#dce0e8"
+GRID_AXIS   = "#9ca0b0"
+LABEL_FG    = "#4c4f69"
+STATUS_BG   = "#e6e9ef"
+STATUS_OK   = "#40a02b"
+STATUS_WARN = "#df8e1d"
+STATUS_ERR  = "#d20f39"
+OUTLINE_DEF = "#4c4f69"
 
 # Mapeo tipo → color de relleno por defecto (si el color es "white" o no parseable)
 _TIPO_COLOR: Dict[str, str] = {
-    "circle":    "#89b4fa",
-    "square":    "#a6e3a1",
-    "triangle":  "#f9e2af",
-    "line":      "#f38ba8",
-    "pentagon":  "#cba6f7",
-    "rectangle": "#fab387",
-    "ellipse":   "#94e2d5",
-    "text":      "#f2cdcd",
+    "circle":    "#1e66f5",
+    "square":    "#40a02b",
+    "triangle":  "#df8e1d",
+    "line":      "#d20f39",
+    "pentagon":  "#8839ef",
+    "rectangle": "#fe640b",
+    "ellipse":   "#179299",
+    "text":      "#dc8a78",
 }
 
 
@@ -133,18 +133,18 @@ class CanvasView:
         style.configure("TNotebook",
                          background=STATUS_BG, borderwidth=0)
         style.configure("TNotebook.Tab",
-                         background="#313244", foreground=LABEL_FG,
+                         background="#ccd0da", foreground=LABEL_FG,
                          padding=[14, 4], font=("Consolas", 10))
         style.map("TNotebook.Tab",
-                  background=[("selected", "#45475a")],
-                  foreground=[("selected", "#cdd6f4")])
+                  background=[("selected", "#bcc0cc")],
+                  foreground=[("selected", "#4c4f69")])
         style.configure("TPane.TFrame", background=STATUS_BG)
 
         # ── Layout principal: PanedWindow horizontal (9 col canvas | 3 col consola) ─
         main = tk.PanedWindow(
             root,
             orient=tk.HORIZONTAL,
-            bg="#313244",
+            bg="#ccd0da",
             sashwidth=4,
             sashrelief=tk.FLAT,
             opaqueresize=True,
@@ -159,7 +159,7 @@ class CanvasView:
         self._nb.pack(fill=tk.BOTH, expand=True)
 
         # Panel derecho: consola (3/12 = 25 %)
-        con_frame = tk.Frame(main, bg="#11111b")
+        con_frame = tk.Frame(main, bg="#e6e9ef")
         main.add(con_frame, stretch="never", minsize=200)
         self._build_console(con_frame)
 
@@ -178,9 +178,9 @@ class CanvasView:
         # Toolbar (arriba)
         toolbar = tk.Frame(tab_canvas, bg=STATUS_BG, pady=2)
         toolbar.pack(fill=tk.X, side=tk.TOP)
-        _btn_kw = dict(bg="#313244", fg=LABEL_FG, relief=tk.FLAT,
+        _btn_kw = dict(bg="#ccd0da", fg=LABEL_FG, relief=tk.FLAT,
                        padx=8, pady=2, font=("Consolas", 9),
-                       activebackground="#45475a", activeforeground=LABEL_FG,
+                       activebackground="#bcc0cc", activeforeground=LABEL_FG,
                        cursor="hand2")
         tk.Button(toolbar, text="SVG",      command=self._export_svg,  **_btn_kw).pack(side=tk.LEFT, padx=2)
         tk.Button(toolbar, text="PNG",      command=self._export_png,  **_btn_kw).pack(side=tk.LEFT, padx=2)
@@ -218,6 +218,16 @@ class CanvasView:
         self._nb.add(tab_ref, text="  Referencia  ")
         self._build_ref_tab(tab_ref)
 
+        # ── Pestaña 5: About ──────────────────────────────────────────────────
+        tab_about = tk.Frame(self._nb, bg=STATUS_BG)
+        self._nb.add(tab_about, text="  About  ")
+        self._build_about_tab(tab_about)
+
+        # ── Pestaña 6: Docs ───────────────────────────────────────────────────
+        tab_docs = tk.Frame(self._nb, bg=STATUS_BG)
+        self._nb.add(tab_docs, text="  Docs  ")
+        self._build_docs_tab(tab_docs)
+
         # ── Callback de comandos + registro de figuras ────────────────────────
         self._cmd_callback = None
         self._items: Dict[str, List[int]] = {}
@@ -234,7 +244,7 @@ class CanvasView:
 
         # ── Sección superior: log léxico ──────────────────────────────────────
         tk.Label(parent, text=" LOG LÉXICO / PIPELINE",
-                 bg=STATUS_BG, fg="#7f849c",
+                 bg=STATUS_BG, fg="#8c8fa1",
                  font=("Consolas", 9, "bold"),
                  anchor="w").pack(fill=tk.X, padx=6, pady=(6, 0))
 
@@ -246,7 +256,7 @@ class CanvasView:
 
         self._lex_text = tk.Text(
             lex_frame,
-            bg="#11111b", fg=LABEL_FG,
+            bg="#ffffff", fg=LABEL_FG,
             font=("Consolas", 9),
             height=14,
             state=tk.DISABLED,
@@ -254,26 +264,26 @@ class CanvasView:
             wrap=tk.NONE,
             relief=tk.FLAT,
             highlightthickness=1,
-            highlightbackground="#313244",
+            highlightbackground="#dce0e8",
         )
         self._lex_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         lex_scroll.config(command=self._lex_text.yview)
 
         # Tags de colores para el log léxico
-        self._lex_text.tag_config("cmd",     foreground="#89dceb", font=("Consolas", 9, "bold"))
-        self._lex_text.tag_config("header",  foreground="#7f849c", font=("Consolas", 9, "italic"))
-        self._lex_text.tag_config("token",   foreground="#cba6f7")
+        self._lex_text.tag_config("cmd",     foreground="#209fb5", font=("Consolas", 9, "bold"))
+        self._lex_text.tag_config("header",  foreground="#8c8fa1", font=("Consolas", 9, "italic"))
+        self._lex_text.tag_config("token",   foreground="#8839ef")
         self._lex_text.tag_config("ok",      foreground=STATUS_OK)
         self._lex_text.tag_config("err",     foreground=STATUS_ERR)
         self._lex_text.tag_config("warn",    foreground=STATUS_WARN)
-        self._lex_text.tag_config("sep",     foreground="#313244")
+        self._lex_text.tag_config("sep",     foreground="#dce0e8")
 
         # ── Separador ─────────────────────────────────────────────────────────
-        tk.Frame(parent, bg="#313244", height=2).pack(fill=tk.X, padx=6)
+        tk.Frame(parent, bg="#dce0e8", height=2).pack(fill=tk.X, padx=6)
 
         # ── Sección inferior: tabla de símbolos ───────────────────────────────
         tk.Label(parent, text=" TABLA DE SÍMBOLOS — evolución",
-                 bg=STATUS_BG, fg="#7f849c",
+                 bg=STATUS_BG, fg="#8c8fa1",
                  font=("Consolas", 9, "bold"),
                  anchor="w").pack(fill=tk.X, padx=6, pady=(4, 0))
 
@@ -287,7 +297,7 @@ class CanvasView:
 
         self._sym_text = tk.Text(
             sym_frame,
-            bg="#11111b", fg=LABEL_FG,
+            bg="#ffffff", fg=LABEL_FG,
             font=("Consolas", 9),
             height=10,
             state=tk.DISABLED,
@@ -296,21 +306,21 @@ class CanvasView:
             wrap=tk.NONE,
             relief=tk.FLAT,
             highlightthickness=1,
-            highlightbackground="#313244",
+            highlightbackground="#dce0e8",
         )
         self._sym_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         sym_scroll_y.config(command=self._sym_text.yview)
         sym_scroll_x.config(command=self._sym_text.xview)
 
         # Tags de colores tabla de símbolos
-        self._sym_text.tag_config("th",      foreground="#7f849c", font=("Consolas", 9, "italic"))
-        self._sym_text.tag_config("id_col",  foreground="#89b4fa")
-        self._sym_text.tag_config("tipo",    foreground="#cba6f7")
+        self._sym_text.tag_config("th",      foreground="#8c8fa1", font=("Consolas", 9, "italic"))
+        self._sym_text.tag_config("id_col",  foreground="#1e66f5")
+        self._sym_text.tag_config("tipo",    foreground="#8839ef")
         self._sym_text.tag_config("active",  foreground=STATUS_OK)
         self._sym_text.tag_config("hidden",  foreground=STATUS_WARN)
         self._sym_text.tag_config("deleted", foreground=STATUS_ERR)
-        self._sym_text.tag_config("sep",     foreground="#313244")
-        self._sym_text.tag_config("cmd_ref", foreground="#89dceb", font=("Consolas", 9, "bold"))
+        self._sym_text.tag_config("sep",     foreground="#dce0e8")
+        self._sym_text.tag_config("cmd_ref", foreground="#209fb5", font=("Consolas", 9, "bold"))
 
     # ═══════════════════════════════════════════════════════════════════════════
     # API PÚBLICA
@@ -688,7 +698,7 @@ class CanvasView:
 
         # ── Layout: listbox izquierda | detalle derecha ──────────────────────
         pane = tk.PanedWindow(parent, orient=tk.HORIZONTAL,
-                              bg="#313244", sashwidth=3, relief=tk.FLAT)
+                              bg="#ccd0da", sashwidth=3, relief=tk.FLAT)
         pane.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
         # Panel izquierdo — lista de categorías
@@ -696,20 +706,20 @@ class CanvasView:
         pane.add(left, width=170, minsize=130, stretch="never")
 
         tk.Label(left, text=" Categoría",
-                 bg=STATUS_BG, fg="#7f849c",
+                 bg=STATUS_BG, fg="#8c8fa1",
                  font=("Consolas", 9, "bold"), anchor="w",
                  ).pack(fill=tk.X, padx=4, pady=(4, 2))
 
         lb_frame = tk.Frame(left, bg=STATUS_BG)
         lb_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
 
-        lb_scroll = tk.Scrollbar(lb_frame, orient=tk.VERTICAL, bg="#313244")
+        lb_scroll = tk.Scrollbar(lb_frame, orient=tk.VERTICAL, bg="#ccd0da")
         lb_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
         self._ref_lb = tk.Listbox(
             lb_frame,
-            bg="#11111b", fg=LABEL_FG,
-            selectbackground="#45475a", selectforeground="#cdd6f4",
+            bg="#ffffff", fg=LABEL_FG,
+            selectbackground="#bcc0cc", selectforeground="#4c4f69",
             font=("Consolas", 9),
             relief=tk.FLAT, highlightthickness=0,
             activestyle="none",
@@ -727,7 +737,7 @@ class CanvasView:
         pane.add(right, stretch="always", minsize=200)
 
         tk.Label(right, text=" Detalle",
-                 bg=STATUS_BG, fg="#7f849c",
+                 bg=STATUS_BG, fg="#8c8fa1",
                  font=("Consolas", 9, "bold"), anchor="w",
                  ).pack(fill=tk.X, padx=4, pady=(4, 2))
 
@@ -739,14 +749,14 @@ class CanvasView:
 
         self._ref_txt = tk.Text(
             detail_frame,
-            bg="#11111b", fg=LABEL_FG,
+            bg="#ffffff", fg=LABEL_FG,
             font=("Consolas", 10),
             state=tk.DISABLED,
             yscrollcommand=det_scroll_y.set,
             wrap=tk.WORD,
             relief=tk.FLAT,
             highlightthickness=1,
-            highlightbackground="#313244",
+            highlightbackground="#dce0e8",
             cursor="arrow",
             padx=8, pady=6,
         )
@@ -754,10 +764,10 @@ class CanvasView:
         det_scroll_y.config(command=self._ref_txt.yview)
 
         # Tags de color en el detalle
-        self._ref_txt.tag_config("sec",  foreground="#585b70", font=("Consolas", 9, "bold"))
-        self._ref_txt.tag_config("syn",  foreground="#89b4fa", font=("Consolas", 10, "bold"))
-        self._ref_txt.tag_config("desc", foreground="#a6adc8", font=("Consolas", 9))
-        self._ref_txt.tag_config("ex",   foreground="#a6e3a1", font=("Consolas", 9))
+        self._ref_txt.tag_config("sec",  foreground="#6c6f85", font=("Consolas", 9, "bold"))
+        self._ref_txt.tag_config("syn",  foreground="#1e66f5", font=("Consolas", 10, "bold"))
+        self._ref_txt.tag_config("desc", foreground="#6c6f85", font=("Consolas", 9))
+        self._ref_txt.tag_config("ex",   foreground="#40a02b", font=("Consolas", 9))
 
         def _on_select(event=None) -> None:
             sel = self._ref_lb.curselection()
@@ -788,15 +798,15 @@ class CanvasView:
 
         tk.Label(
             header_frame, text=" HISTORIAL — ÁRBOL DE SINTAXIS ABSTRACTA",
-            bg=STATUS_BG, fg="#7f849c",
+            bg=STATUS_BG, fg="#8c8fa1",
             font=("Consolas", 9, "bold"), anchor="w",
         ).pack(side=tk.LEFT)
 
         tk.Button(
             header_frame, text="Limpiar",
-            bg="#313244", fg="#6c7086",
+            bg="#ccd0da", fg="#6c6f85",
             font=("Consolas", 8), relief=tk.FLAT, cursor="hand2",
-            activebackground="#45475a", activeforeground="#cdd6f4",
+            activebackground="#bcc0cc", activeforeground="#4c4f69",
             command=lambda: (
                 self._ast_text.configure(state=tk.NORMAL),
                 self._ast_text.delete("1.0", tk.END),
@@ -814,7 +824,7 @@ class CanvasView:
 
         self._ast_text = tk.Text(
             frame,
-            bg="#11111b", fg=LABEL_FG,
+            bg="#ffffff", fg=LABEL_FG,
             font=("Consolas", 10),
             state=tk.DISABLED,
             yscrollcommand=scroll_y.set,
@@ -822,21 +832,21 @@ class CanvasView:
             wrap=tk.NONE,
             relief=tk.FLAT,
             highlightthickness=1,
-            highlightbackground="#313244",
+            highlightbackground="#dce0e8",
         )
         self._ast_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll_y.config(command=self._ast_text.yview)
         scroll_x.config(command=self._ast_text.xview)
 
         # Tags de colores
-        self._ast_text.tag_config("node",    foreground="#89b4fa",  font=("Consolas", 10, "bold"))
-        self._ast_text.tag_config("field",   foreground="#cba6f7")
-        self._ast_text.tag_config("value",   foreground="#a6e3a1")
-        self._ast_text.tag_config("branch",  foreground="#45475a")
-        self._ast_text.tag_config("wildcard",foreground="#f9e2af")
-        self._ast_text.tag_config("hint",    foreground="#6c7086",  font=("Consolas", 9, "italic"))
-        self._ast_text.tag_config("cmd",     foreground="#89dceb",  font=("Consolas", 10, "bold"))
-        self._ast_text.tag_config("sep",     foreground="#313244")
+        self._ast_text.tag_config("node",    foreground="#1e66f5",  font=("Consolas", 10, "bold"))
+        self._ast_text.tag_config("field",   foreground="#8839ef")
+        self._ast_text.tag_config("value",   foreground="#40a02b")
+        self._ast_text.tag_config("branch",  foreground="#9ca0b0")
+        self._ast_text.tag_config("wildcard",foreground="#df8e1d")
+        self._ast_text.tag_config("hint",    foreground="#9ca0b0",  font=("Consolas", 9, "italic"))
+        self._ast_text.tag_config("cmd",     foreground="#209fb5",  font=("Consolas", 10, "bold"))
+        self._ast_text.tag_config("sep",     foreground="#dce0e8")
 
     def mostrar_ast(self, linea: str, ast: object) -> None:
         """Agrega al historial del panel AST el árbol del comando recibido."""
@@ -1182,7 +1192,7 @@ class CanvasView:
         else:
             # Figura oculta: sin relleno, contorno punteado tenue
             fill = ""
-            kw   = dict(fill="", outline="#585b70", width=1)
+            kw   = dict(fill="", outline="#acb0be", width=1)
             dash = (4, 4)
 
         if e.tipo == "circle":
@@ -1214,7 +1224,7 @@ class CanvasView:
             items.append(iid)
 
         elif e.tipo == "line":
-            color_linea = _parse_color(e.color, e.tipo) if e.visible else "#585b70"
+            color_linea = _parse_color(e.color, e.tipo) if e.visible else "#acb0be"
             kw_line = dict(fill=color_linea, width=max(1, e.escala * 2 * self._scale))
             if dash:
                 kw_line["dash"] = dash
@@ -1266,7 +1276,7 @@ class CanvasView:
 
         elif e.tipo == "text":
             font_size = max(8, int(e.escala * 2 * self._scale))
-            text_color = _parse_color(e.color, e.tipo) if e.visible else "#585b70"
+            text_color = _parse_color(e.color, e.tipo) if e.visible else "#acb0be"
             contenido = (e.contenido or '"texto"').strip('"')
             iid = self._canvas.create_text(
                 cx, cy,
@@ -1311,55 +1321,55 @@ class CanvasView:
         # Título del panel
         tk.Label(
             parent, text=" CONSOLA",
-            bg="#11111b", fg="#585b70",
+            bg="#e6e9ef", fg="#9ca0b0",
             font=("Consolas", 9, "bold"), anchor="w",
         ).pack(fill=tk.X, padx=4, pady=(4, 0))
-        tk.Frame(parent, bg="#313244", height=1).pack(fill=tk.X)
+        tk.Frame(parent, bg="#dce0e8", height=1).pack(fill=tk.X)
 
         # ── Área de salida (crece verticalmente) ──────────────────────────────
         self._console = ScrolledText(
             parent,
             wrap=tk.WORD,
-            bg="#0d0d17",
-            fg="#cdd6f4",
-            insertbackground="#cdd6f4",
+            bg="#ffffff",
+            fg="#4c4f69",
+            insertbackground="#4c4f69",
             font=("Consolas", 10),
             state="disabled",
             relief=tk.FLAT,
             highlightthickness=0,
-            selectbackground="#313244",
+            selectbackground="#ccd0da",
         )
         self._console.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
 
         # Tags de colores para la consola
-        self._console.tag_config("cmd",   foreground="#89b4fa",  font=("Consolas", 10, "bold"))
-        self._console.tag_config("ok",    foreground="#a6e3a1")
-        self._console.tag_config("error", foreground="#f38ba8")
-        self._console.tag_config("warn",  foreground="#f9e2af")
-        self._console.tag_config("sug",   foreground="#89dceb")
-        self._console.tag_config("ptr",   foreground="#f9e2af",  font=("Consolas", 10, "bold"))
-        self._console.tag_config("info",  foreground="#6c7086")
+        self._console.tag_config("cmd",   foreground="#1e66f5",  font=("Consolas", 10, "bold"))
+        self._console.tag_config("ok",    foreground="#40a02b")
+        self._console.tag_config("error", foreground="#d20f39")
+        self._console.tag_config("warn",  foreground="#df8e1d")
+        self._console.tag_config("sug",   foreground="#209fb5")
+        self._console.tag_config("ptr",   foreground="#df8e1d",  font=("Consolas", 10, "bold"))
+        self._console.tag_config("info",  foreground="#9ca0b0")
 
         # ── Fila de entrada ───────────────────────────────────────────────────
-        entry_row = tk.Frame(parent, bg="#11111b")
+        entry_row = tk.Frame(parent, bg="#e6e9ef")
         entry_row.pack(fill=tk.X, padx=0, pady=(1, 0))
 
         tk.Label(
             entry_row, text=">>>",
-            bg="#11111b", fg="#585b70",
+            bg="#e6e9ef", fg="#9ca0b0",
             font=("Consolas", 11, "bold"),
             padx=8,
         ).pack(side=tk.LEFT)
 
         self._entry = tk.Entry(
             entry_row,
-            bg="#1e1e2e", fg="#cdd6f4",
-            insertbackground="#cdd6f4",
+            bg="#ffffff", fg="#4c4f69",
+            insertbackground="#4c4f69",
             font=("Consolas", 11),
             relief=tk.FLAT,
             highlightthickness=1,
-            highlightbackground="#313244",
-            highlightcolor="#89b4fa",
+            highlightbackground="#dce0e8",
+            highlightcolor="#1e66f5",
         )
         self._entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8), pady=4)
         self._entry.bind("<Return>", self._on_enter)
@@ -1560,7 +1570,7 @@ class CanvasView:
                     f'fill="{fill}" stroke="{stroke}" stroke-width="2"/>')
             elif e.tipo == "text":
                 fs   = max(8, int(e.escala * 2 * self._scale))
-                tc   = _parse_color(e.color, e.tipo) if e.visible else "#585b70"
+                tc   = _parse_color(e.color, e.tipo) if e.visible else "#acb0be"
                 cont = (e.contenido or '"texto"').strip('"')
                 cont = cont.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 lines.append(
@@ -1569,7 +1579,7 @@ class CanvasView:
                     f'text-anchor="middle" dominant-baseline="middle">{cont}</text>')
             elif e.tipo == "line" and e.pos_fin:
                 cx2, cy2 = self._to_canvas(*e.pos_fin)
-                sc = _parse_color(e.color, e.tipo) if e.visible else "#585b70"
+                sc = _parse_color(e.color, e.tipo) if e.visible else "#acb0be"
                 sw = max(1, e.escala * 2 * self._scale)
                 lines.append(
                     f'  <line x1="{cx:.1f}" y1="{cy:.1f}" '
@@ -1609,3 +1619,327 @@ class CanvasView:
             self.write_console(f"  OK: PNG exportado → {path}", "ok")
         except Exception as ex:
             self.write_console(f"  Error al exportar PNG: {ex}", "error")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PESTAÑA ABOUT — información del proyecto y el equipo
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _build_about_tab(self, parent: tk.Frame) -> None:
+        """Construye la pestaña About con logos, créditos y descripción."""
+        import os
+        from tkinter import font as tkfont
+
+        BG_ABOUT  = STATUS_BG
+        FG_TITLE  = "#1e66f5"
+        FG_HEAD   = "#4c4f69"
+        FG_SUB    = "#6c6f85"
+        FG_DESC   = "#4c4f69"
+
+        # ── Canvas con scrollbar vertical ────────────────────────────────────
+        outer = tk.Frame(parent, bg=BG_ABOUT)
+        outer.pack(fill=tk.BOTH, expand=True)
+
+        vscroll = tk.Scrollbar(outer, orient=tk.VERTICAL)
+        vscroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        cv = tk.Canvas(outer, bg=BG_ABOUT, highlightthickness=0,
+                       yscrollcommand=vscroll.set)
+        cv.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vscroll.config(command=cv.yview)
+
+        inner = tk.Frame(cv, bg=BG_ABOUT)
+        win_id = cv.create_window((0, 0), window=inner, anchor="nw")
+
+        def _on_frame_configure(event):
+            cv.configure(scrollregion=cv.bbox("all"))
+
+        def _on_canvas_configure(event):
+            cv.itemconfig(win_id, width=event.width)
+
+        inner.bind("<Configure>", _on_frame_configure)
+        cv.bind("<Configure>", _on_canvas_configure)
+
+        def _on_mousewheel(event):
+            cv.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        cv.bind_all("<MouseWheel>", _on_mousewheel)
+
+        # ── Fila de logos ─────────────────────────────────────────────────────
+        logos_row = tk.Frame(inner, bg=BG_ABOUT)
+        logos_row.pack(pady=(30, 10))
+
+        base_dir = os.path.join(os.path.dirname(__file__), "img")
+
+        self._about_imgs: list = []   # keep references alive
+
+        for filename, label_text in [
+            ("logo_itc.png", "Tecnológico Nacional de México\nCampus Celaya"),
+            ("yo.jpeg",      "Galindo López Uriel Emiliano"),
+        ]:
+            img_path = os.path.join(base_dir, filename)
+            col_frame = tk.Frame(logos_row, bg=BG_ABOUT)
+            col_frame.pack(side=tk.LEFT, padx=40)
+
+            try:
+                from PIL import Image, ImageTk
+                pil_img = Image.open(img_path)
+                pil_img.thumbnail((140, 140), Image.LANCZOS)
+                tk_img  = ImageTk.PhotoImage(pil_img)
+                self._about_imgs.append(tk_img)
+                img_label = tk.Label(col_frame, image=tk_img, bg=BG_ABOUT,
+                                     relief=tk.FLAT, bd=0)
+                img_label.pack()
+            except Exception:
+                # Fallback sin Pillow: usar PhotoImage nativo (solo PNG)
+                try:
+                    tk_img = tk.PhotoImage(file=img_path)
+                    # Reducir si es demasiado grande (subsample)
+                    w_px, h_px = tk_img.width(), tk_img.height()
+                    factor = max(1, max(w_px, h_px) // 140)
+                    if factor > 1:
+                        tk_img = tk_img.subsample(factor, factor)
+                    self._about_imgs.append(tk_img)
+                    img_label = tk.Label(col_frame, image=tk_img, bg=BG_ABOUT,
+                                         relief=tk.FLAT, bd=0)
+                    img_label.pack()
+                except Exception:
+                    tk.Label(col_frame, text="[ imagen no disponible ]",
+                             bg=BG_ABOUT, fg=FG_SUB,
+                             font=("Consolas", 9, "italic")).pack()
+
+            tk.Label(col_frame, text=label_text,
+                     bg=BG_ABOUT, fg=FG_SUB,
+                     font=("Consolas", 9), justify=tk.CENTER).pack(pady=(6, 0))
+
+        # ── Separador ─────────────────────────────────────────────────────────
+        tk.Frame(inner, bg="#dce0e8", height=2).pack(fill=tk.X, padx=40, pady=(16, 0))
+
+        # ── Títulos de materia e información académica ────────────────────────
+        info_frame = tk.Frame(inner, bg=BG_ABOUT)
+        info_frame.pack(pady=(14, 0))
+
+        tk.Label(info_frame,
+                 text="Lenguajes y Autómatas II",
+                 bg=BG_ABOUT, fg=FG_TITLE,
+                 font=("Consolas", 17, "bold")).pack()
+
+        tk.Label(info_frame,
+                 text="Tecnológico Nacional de México  ·  Campus Celaya",
+                 bg=BG_ABOUT, fg=FG_SUB,
+                 font=("Consolas", 10)).pack(pady=(2, 10))
+
+        for lbl, val in [
+            ("Profesor :", "ISC. Ricardo González González"),
+            ("Alumno   :", "21030060  ·  Galindo López Uriel Emiliano"),
+        ]:
+            row = tk.Frame(info_frame, bg=BG_ABOUT)
+            row.pack(anchor="w", padx=20, pady=2)
+            tk.Label(row, text=lbl,
+                     bg=BG_ABOUT, fg=FG_SUB,
+                     font=("Consolas", 11, "bold"), width=12,
+                     anchor="e").pack(side=tk.LEFT)
+            tk.Label(row, text=f"  {val}",
+                     bg=BG_ABOUT, fg=FG_HEAD,
+                     font=("Consolas", 11)).pack(side=tk.LEFT)
+
+        # ── Separador ─────────────────────────────────────────────────────────
+        tk.Frame(inner, bg="#dce0e8", height=2).pack(fill=tk.X, padx=40, pady=(18, 0))
+
+        # ── Descripción del proyecto ──────────────────────────────────────────
+        desc_frame = tk.Frame(inner, bg=BG_ABOUT)
+        desc_frame.pack(fill=tk.X, padx=50, pady=(16, 30))
+
+        tk.Label(desc_frame,
+                 text="Acerca del Proyecto",
+                 bg=BG_ABOUT, fg=FG_TITLE,
+                 font=("Consolas", 13, "bold"),
+                 anchor="w").pack(fill=tk.X, pady=(0, 8))
+
+        descripcion = (
+            "Este proyecto consiste en el desarrollo de un intérprete interactivo para\n"
+            "un lenguaje de dominio específico (DSL) orientado a la creación y manipulación\n"
+            "de figuras geométricas sobre un canvas virtual.\n\n"
+            "El intérprete implementa las fases clásicas de un compilador:\n"
+            "  · Análisis léxico    — tokenización del texto de entrada.\n"
+            "  · Análisis sintáctico — validación de la gramática mediante un parser\n"
+            "                          descendente recursivo.\n"
+            "  · Análisis semántico  — verificación de tipos, existencia de identificadores\n"
+            "                          y coherencia de parámetros.\n"
+            "  · Ejecución           — aplicación de los cambios sobre la tabla de símbolos\n"
+            "                          y re-renderizado inmediato en el canvas.\n\n"
+            "Propósito: aplicar los conceptos de autómatas finitos, expresiones regulares,\n"
+            "gramáticas formales y análisis semántico en un sistema funcional que permite\n"
+            "explorar visualmente el resultado de cada instrucción en tiempo real."
+        )
+
+        tk.Label(desc_frame,
+                 text=descripcion,
+                 bg=BG_ABOUT, fg=FG_DESC,
+                 font=("Consolas", 10),
+                 justify=tk.LEFT,
+                 anchor="nw",
+                 wraplength=0).pack(fill=tk.X)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PESTAÑA DOCS — documentación completa del proyecto (README)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _build_docs_tab(self, parent: tk.Frame) -> None:
+        """Renderiza el contenido del README.md con formato visual en un Text widget."""
+        import os
+
+        # ── Contenedor con scrollbars ────────────────────────────────────────
+        outer = tk.Frame(parent, bg=STATUS_BG)
+        outer.pack(fill=tk.BOTH, expand=True)
+
+        vscroll = tk.Scrollbar(outer, orient=tk.VERTICAL)
+        vscroll.pack(side=tk.RIGHT, fill=tk.Y)
+        hscroll = tk.Scrollbar(outer, orient=tk.HORIZONTAL)
+        hscroll.pack(side=tk.BOTTOM, fill=tk.X)
+
+        txt = tk.Text(
+            outer,
+            bg="#ffffff",
+            fg=LABEL_FG,
+            font=("Consolas", 10),
+            wrap=tk.NONE,
+            state=tk.DISABLED,
+            relief=tk.FLAT,
+            highlightthickness=0,
+            padx=18,
+            pady=12,
+            yscrollcommand=vscroll.set,
+            xscrollcommand=hscroll.set,
+            cursor="arrow",
+        )
+        txt.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vscroll.config(command=txt.yview)
+        hscroll.config(command=txt.xview)
+
+        # ── Scroll con rueda del ratón ────────────────────────────────────────
+        def _mw(e):
+            txt.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        txt.bind("<MouseWheel>", _mw)
+
+        # ── Tags de formato ───────────────────────────────────────────────────
+        txt.tag_config("h1",      foreground="#1e66f5", font=("Consolas", 16, "bold"))
+        txt.tag_config("h2",      foreground="#1e66f5", font=("Consolas", 13, "bold"))
+        txt.tag_config("h3",      foreground="#8839ef", font=("Consolas", 11, "bold"))
+        txt.tag_config("h4",      foreground="#8839ef", font=("Consolas", 10, "bold"))
+        txt.tag_config("code",    foreground="#d20f39", background="#f0f0f0",
+                       font=("Consolas", 10))
+        txt.tag_config("block",   foreground="#4c4f69", background="#f5f5f5",
+                       font=("Consolas", 9), lmargin1=32, lmargin2=32)
+        txt.tag_config("sep",     foreground="#dce0e8")
+        txt.tag_config("th",      foreground="#6c6f85", font=("Consolas", 10, "italic"))
+        txt.tag_config("td",      foreground=LABEL_FG, font=("Consolas", 10))
+        txt.tag_config("bullet",  foreground="#209fb5", font=("Consolas", 10))
+        txt.tag_config("normal",  foreground=LABEL_FG, font=("Consolas", 10))
+        txt.tag_config("bold",    foreground=LABEL_FG, font=("Consolas", 10, "bold"))
+        txt.tag_config("toclink", foreground="#1e66f5", font=("Consolas", 10))
+
+        # ── Leer README.md ───────────────────────────────────────────────────
+        readme_path = os.path.join(os.path.dirname(__file__), "README.md")
+        try:
+            with open(readme_path, encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception:
+            txt.configure(state=tk.NORMAL)
+            txt.insert(tk.END, "  No se encontró README.md\n", "h3")
+            txt.configure(state=tk.DISABLED)
+            return
+
+        # ── Renderizador ─────────────────────────────────────────────────────
+        def _strip_inline(text: str) -> str:
+            """Elimina los backticks de inline code para inserción simple."""
+            return text.replace("`", "")
+
+        def _ins(text, tag="normal"):
+            txt.configure(state=tk.NORMAL)
+            txt.insert(tk.END, text, tag)
+            txt.configure(state=tk.DISABLED)
+
+        in_code_block = False
+        i = 0
+        while i < len(lines):
+            raw = lines[i].rstrip("\n")
+
+            # Bloques de código (```)
+            if raw.strip().startswith("```"):
+                in_code_block = not in_code_block
+                if in_code_block:
+                    _ins("\n", "normal")
+                else:
+                    _ins("\n", "normal")
+                i += 1
+                continue
+
+            if in_code_block:
+                _ins(raw + "\n", "block")
+                i += 1
+                continue
+
+            # Líneas horizontales
+            if raw.strip().startswith("---"):
+                _ins("─" * 90 + "\n", "sep")
+                i += 1
+                continue
+
+            # Encabezados
+            if raw.startswith("#### "):
+                _ins(raw[5:] + "\n", "h4")
+                i += 1
+                continue
+            if raw.startswith("### "):
+                _ins("\n" + raw[4:] + "\n", "h3")
+                i += 1
+                continue
+            if raw.startswith("## "):
+                _ins("\n" + raw[3:] + "\n", "h2")
+                i += 1
+                continue
+            if raw.startswith("# "):
+                _ins(raw[2:] + "\n\n", "h1")
+                i += 1
+                continue
+
+            # Tabla Markdown (línea que empieza con |)
+            if raw.strip().startswith("|"):
+                cells = [c.strip() for c in raw.strip().strip("|").split("|")]
+                # Detectar si es línea separadora de tabla (|---|---|)
+                if all(set(c.replace("-","").replace(":","").replace(" ","")) == set()
+                       for c in cells if c):
+                    i += 1
+                    continue
+                # Encabezado o fila de datos
+                is_header = (i == 0 or not lines[i-1].strip().startswith("|"))
+                row_tag = "th" if is_header else "td"
+                line_out = "  " + "  │  ".join(f"{c:<28}" for c in cells) + "\n"
+                _ins(line_out, row_tag)
+                i += 1
+                continue
+
+            # Viñetas  -  /  *
+            if raw.strip().startswith(("- ", "* ", "+ ")):
+                indent = len(raw) - len(raw.lstrip())
+                pad = " " * indent
+                content = raw.strip()[2:]
+                _ins(f"{pad}  · ", "bullet")
+                _ins(_strip_inline(content) + "\n", "normal")
+                i += 1
+                continue
+
+            # Línea vacía
+            if raw.strip() == "":
+                _ins("\n", "normal")
+                i += 1
+                continue
+
+            # Texto normal (con inline code `...` resaltado)
+            _ins(_strip_inline(raw) + "\n", "normal")
+            i += 1
+
+        # Scroll al inicio
+        txt.configure(state=tk.NORMAL)
+        txt.see("1.0")
+        txt.configure(state=tk.DISABLED)

@@ -1,18 +1,8 @@
-"""
-lexer.py — Analizador Léxico · Lenguaje de Figuras Geométricas
-
-Implementado como AFD explícito con tabla de transiciones carácter a carácter.
-Ninguna decisión léxica se toma con "if lexema in lista"; las transiciones
-gobiernan el flujo.  Los conjuntos PALABRAS_RESERVADAS / TIPOS_FIGURA se
-consultan únicamente al EMITIR un token de letras, equivalente al mapeo
-estado_final → TipoToken del AFD formal.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, FrozenSet, List, Optional, Tuple
+from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -26,7 +16,7 @@ class TipoToken(Enum):
     NUM_DEC           = "NUM_DEC"
     NUM_HEX           = "NUM_HEX"
     STRING            = "STRING"
-    NOMBRE_VAR        = "NOMBRE_VAR"    # nombre de variable (set x 10)
+    NOMBRE_VAR        = "NOMBRE_VAR"
     LPAREN            = "LPAREN"
     RPAREN            = "RPAREN"
     LBRACKET          = "LBRACKET"
@@ -52,24 +42,28 @@ class Token:
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 2 · ESTADOS DEL AFD
+#     Los estados de trie se nombran  "kw_<prefijo>"  y son strings,
+#     no miembros del enum Estado, para permitir generación dinámica.
+#     El resto de estados especiales sí son miembros del enum.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class Estado(Enum):
-    # ── Transitorios ──────────────────────────────────────────────────────────
-    Q0   = "q0"     # inicial / sumidero de espacios
-    QL   = "qL"     # leyendo letras (palabras / tipos / prefijo id)
-    QID1 = "qID1"   # 1er dígito del identificador
-    QID2 = "qID2"   # 2do dígito
-    QID3 = "qID3"   # 3er dígito
-    QID4 = "qID4"   # 4to dígito  →  listo para emitir en delimitador
-    QD   = "qD"     # leyendo dígitos decimales
-    QNEG = "qNEG"   # después de '-': espera dígito para número negativo
-    QH   = "qH"     # después de '#'
-    QH1  = "qH1"    # leyendo dígitos hexadecimales
-    QS   = "qS"     # dentro de string literal
-    QE   = "qE"     # sumidero de error
-    # ── Aceptación inmediata (un solo carácter, sin acumulador) ───────────────
-    QSYM = "qSYM"   # símbolo delimitador
+    Q0     = "q0"      # inicial / sumidero de espacios
+    QL_VAR = "qL_var"  # acumulando letras que no siguen ninguna rama del trie
+    QID1   = "qID1"    # 1er dígito del identificador
+    QID2   = "qID2"    # 2do dígito
+    QID3   = "qID3"    # 3er dígito
+    QID4   = "qID4"    # 4to dígito → listo para emitir en delimitador
+    QD     = "qD"      # leyendo dígitos decimales
+    QNEG   = "qNEG"    # después de '-'
+    QH     = "qH"      # después de '#'
+    QH1    = "qH1"     # leyendo dígitos hexadecimales
+    QS     = "qS"      # dentro de string literal
+    QE     = "qE"      # sumidero de error
+    QSYM   = "qSYM"    # símbolo de un carácter (accept inmediato)
+
+# Tipo unión: estado puede ser Estado (enum) o str (nodo de trie)
+_Estado = object   # Estado | str — solo para anotaciones
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -77,142 +71,32 @@ class Estado(Enum):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class CC(Enum):
-    HEX_ALPHA = "hex_alpha"   # A-F  a-f   (también son letras; rol dual)
-    LETTER    = "letter"      # resto de letras  g-z  G-Z
-    DIGIT     = "digit"       # 0-9
-    HASH      = "hash"        # #
-    QUOTE     = "quote"       # "
-    MINUS     = "minus"       # -  (prefijo de número negativo)
-    LPAREN    = "lparen"      # (
-    RPAREN    = "rparen"      # )
-    LBRACKET  = "lbracket"    # [
-    RBRACKET  = "rbracket"    # ]
-    COMMA     = "comma"       # ,
-    UNDER     = "under"       # _
-    SPACE     = "space"       # ' '  \t
-    NEWLINE   = "newline"     # \n   \r
+    HEX_ALPHA = "hex_alpha"
+    LETTER    = "letter"
+    DIGIT     = "digit"
+    HASH      = "hash"
+    QUOTE     = "quote"
+    MINUS     = "minus"
+    LPAREN    = "lparen"
+    RPAREN    = "rparen"
+    LBRACKET  = "lbracket"
+    RBRACKET  = "rbracket"
+    COMMA     = "comma"
+    UNDER     = "under"
+    SPACE     = "space"
+    NEWLINE   = "newline"
     EOF_CC    = "eof"
     OTHER     = "other"
 
 
 _HEX_CHARS: FrozenSet[str] = frozenset("ABCDEFabcdef")
 
-# Clases que actúan como «fin de lexema» para estados acumuladores.
-# Al encontrar una de éstas en los estados _ESTADOS_EMIT, se emite el
-# token acumulado SIN consumir el carácter delimitador.
 _DELIM: FrozenSet[CC] = frozenset({
     CC.SPACE, CC.NEWLINE, CC.EOF_CC,
     CC.LPAREN, CC.RPAREN,
     CC.LBRACKET, CC.RBRACKET,
     CC.COMMA, CC.UNDER,
 })
-
-# Estados acumuladores que responden al delimitador emitiendo su token
-_ESTADOS_EMIT: FrozenSet[Estado] = frozenset({
-    Estado.QL, Estado.QID4, Estado.QD, Estado.QH1,
-})
-
-
-def _cc(c: Optional[str]) -> CC:
-    """Clasifica un carácter en su clase CC."""
-    if c is None:         return CC.EOF_CC
-    if c in _HEX_CHARS:   return CC.HEX_ALPHA
-    if c.isalpha():       return CC.LETTER
-    if c.isdigit():       return CC.DIGIT
-    _MAP: Dict[str, CC] = {
-        '#': CC.HASH,     '"': CC.QUOTE,    '-': CC.MINUS,
-        '(': CC.LPAREN,   ')': CC.RPAREN,
-        '[': CC.LBRACKET, ']': CC.RBRACKET,
-        ',': CC.COMMA,    '_': CC.UNDER,
-    }
-    if c in _MAP:         return _MAP[c]
-    if c in ' \t':        return CC.SPACE
-    if c in '\n\r':       return CC.NEWLINE
-    return CC.OTHER
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 4 · TABLA DE TRANSICIONES
-#     (Estado, CC) ──→ Estado
-#     Pares no definidos equivalen a Estado.QE  (error implícito).
-# ═══════════════════════════════════════════════════════════════════════════════
-
-_TABLA: Dict[Tuple[Estado, CC], Estado] = {
-
-    # ── q0: estado inicial ────────────────────────────────────────────────────
-    (Estado.Q0, CC.HEX_ALPHA): Estado.QL,
-    (Estado.Q0, CC.LETTER):    Estado.QL,
-    (Estado.Q0, CC.DIGIT):     Estado.QD,
-    (Estado.Q0, CC.HASH):      Estado.QH,
-    (Estado.Q0, CC.QUOTE):     Estado.QS,
-    (Estado.Q0, CC.MINUS):     Estado.QNEG,  # prefijo de número negativo
-    (Estado.Q0, CC.LPAREN):    Estado.QSYM,
-    (Estado.Q0, CC.RPAREN):    Estado.QSYM,
-    (Estado.Q0, CC.LBRACKET):  Estado.QSYM,
-    (Estado.Q0, CC.RBRACKET):  Estado.QSYM,
-    (Estado.Q0, CC.COMMA):     Estado.QSYM,
-    (Estado.Q0, CC.UNDER):     Estado.QSYM,
-    (Estado.Q0, CC.SPACE):     Estado.Q0,    # espacio: permanecer en q0
-    (Estado.Q0, CC.NEWLINE):   Estado.Q0,    # nueva línea: permanecer en q0
-    # OTHER → QE (implícito)
-
-    # ── qNEG: prefijo negativo ────────────────────────────────────────────────
-    (Estado.QNEG, CC.DIGIT): Estado.QD,     # '-' + dígito → número negativo
-
-    # ── qL: leyendo letras ────────────────────────────────────────────────────
-    (Estado.QL, CC.HEX_ALPHA): Estado.QL,
-    (Estado.QL, CC.LETTER):    Estado.QL,
-    (Estado.QL, CC.DIGIT):     Estado.QID1,  # primer dígito del identificador
-    # delimitador → emitir (manejado en el bucle principal, no en la tabla)
-    # QUOTE / HASH / OTHER → QE  (implícito)
-
-    # ── qID1 – qID4: sufijo numérico del identificador ────────────────────────
-    (Estado.QID1, CC.DIGIT): Estado.QID2,
-    (Estado.QID2, CC.DIGIT): Estado.QID3,
-    (Estado.QID3, CC.DIGIT): Estado.QID4,
-    # QID4 + delimitador → emitir (manejado en el bucle principal)
-    # cualquier no-dígito en QID1-QID4 → QE  (implícito)
-
-    # ── qD: número decimal ────────────────────────────────────────────────────
-    (Estado.QD, CC.DIGIT): Estado.QD,
-    # delimitador → emitir (manejado en el bucle principal)
-    # otro → QE  (implícito)
-
-    # ── qH: después de '#' ────────────────────────────────────────────────────
-    (Estado.QH, CC.DIGIT):     Estado.QH1,
-    (Estado.QH, CC.HEX_ALPHA): Estado.QH1,
-    # otro → QE: L003  (implícito)
-
-    # ── qH1: dígitos hexadecimales ────────────────────────────────────────────
-    (Estado.QH1, CC.DIGIT):     Estado.QH1,
-    (Estado.QH1, CC.HEX_ALPHA): Estado.QH1,
-    # delimitador → emitir (manejado en el bucle principal)
-    # letra no-hex / otro → QE: L003  (implícito)
-
-    # qS: string literal
-    # Manejo íntegramente en el bucle principal: acepta todo ≠ '"' sin tabla.
-}
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 5 · CONJUNTOS DE CLASIFICACIÓN FINAL
-#     Solo se consultan al EMITIR un token de letras (equivale al mapeo
-#     qPR / qTF del AFD formal).  No participan en el recorrido caracter.
-# ═══════════════════════════════════════════════════════════════════════════════
-
-_RESERVADAS: FrozenSet[str] = frozenset({
-    "create", "update", "delete", "show",    "hide",
-    "list",   "clear",  "screen", "help",    "rotate",
-    "move",   "copy",   "group",  "ungroup", "scale",
-    "set",    # asignación de variable entera
-})
-
-_TIPOS_FIGURA: FrozenSet[str] = frozenset({
-    "circle", "square", "triangle", "line", "pentagon",
-    "rectangle", "ellipse", "text",
-})
-
-# Prefijos válidos para identificadores: tipos de figura + "group" (para group0001)
-_PREFIJOS_VALIDOS: FrozenSet[str] = _TIPOS_FIGURA | frozenset({"group"})
 
 _SYM_TOKEN: Dict[str, TipoToken] = {
     '(': TipoToken.LPAREN,
@@ -224,13 +108,186 @@ _SYM_TOKEN: Dict[str, TipoToken] = {
 }
 
 
+def _cc(c: Optional[str]) -> CC:
+    if c is None:        return CC.EOF_CC
+    if c in _HEX_CHARS:  return CC.HEX_ALPHA
+    if c.isalpha():      return CC.LETTER
+    if c.isdigit():      return CC.DIGIT
+    _MAP: Dict[str, CC] = {
+        '#': CC.HASH,     '"': CC.QUOTE,    '-': CC.MINUS,
+        '(': CC.LPAREN,   ')': CC.RPAREN,
+        '[': CC.LBRACKET, ']': CC.RBRACKET,
+        ',': CC.COMMA,    '_': CC.UNDER,
+    }
+    if c in _MAP:        return _MAP[c]
+    if c in ' \t':       return CC.SPACE
+    if c in '\n\r':      return CC.NEWLINE
+    return CC.OTHER
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 4 · GENERADOR DE TRIE  —  construye la tabla de transiciones para keywords
+#
+#   Para cada keyword "abcde" de tipo T se crea la cadena de estados:
+#       Q0 ─a─→ kw_a ─b─→ kw_ab ─c─→ kw_abc ─d─→ kw_abcd ─e─→ kw_abcde
+#   El estado final  kw_abcde  queda registrado en _ESTADO_TOKEN[kw_abcde] = T.
+#
+#   Si desde un nodo del trie llega una letra que NO tiene rama definida,
+#   la transición apunta a  QL_VAR  (sigue acumulando para NOMBRE_VAR).
+#
+#   Si desde un nodo final de TIPO_FIGURA llega un dígito → QID1 (identificador).
+#   Si desde un nodo final de PREFIJO_ID (tipos + "group") llega un dígito → QID1.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Diccionario:  nombre_de_estado_trie → TipoToken  (solo estados finales)
+_ESTADO_TOKEN: Dict[str, TipoToken] = {}
+
+# Conjunto de todos los estados del trie (nodos intermedios + finales)
+_ESTADOS_TRIE: Set[str] = set()
+
+# Conjunto de estados trie que son finales de TIPO_FIGURA o "group"
+# (desde ellos un dígito arranca el sufijo del identificador)
+_TRIE_PREFIJO_ID: Set[str] = set()
+
+# Tabla de transiciones principal.
+# Clave: (estado: Estado | str, carácter: str)  → estado destino: Estado | str
+# Se usa carácter literal, no CC, para los nodos del trie (máxima precisión).
+_TABLA_TRIE: Dict[Tuple[object, str], object] = {}
+
+
+def _nombre_nodo(prefijo: str) -> str:
+    return f"kw_{prefijo}"
+
+
+def _registrar_keyword(palabra: str, tipo: TipoToken) -> None:
+    """Inserta una keyword en el trie de estados."""
+    estado_ant: object = Estado.Q0
+    for i, ch in enumerate(palabra):
+        nodo = _nombre_nodo(palabra[: i + 1])
+        _ESTADOS_TRIE.add(nodo)
+        clave = (estado_ant, ch)
+        if clave not in _TABLA_TRIE:          # no sobreescribir rama ya definida
+            _TABLA_TRIE[clave] = nodo
+        estado_ant = nodo
+    # El último nodo es el estado final para esta keyword
+    estado_final = _nombre_nodo(palabra)
+    _ESTADO_TOKEN[estado_final] = tipo
+
+
+# ── Registro de todas las keywords ──────────────────────────────────────────
+
+_RESERVADAS_LIST = [
+    "create", "update", "delete", "show",    "hide",
+    "list",   "clear",  "screen", "help",    "rotate",
+    "move",   "copy",   "group",  "ungroup", "scale",
+    "set",
+]
+
+_TIPOS_FIGURA_LIST = [
+    "circle", "square", "triangle", "line", "pentagon",
+    "rectangle", "ellipse", "text",
+]
+
+for _kw in _RESERVADAS_LIST:
+    _registrar_keyword(_kw, TipoToken.PALABRA_RESERVADA)
+
+for _tf in _TIPOS_FIGURA_LIST:
+    _registrar_keyword(_tf, TipoToken.TIPO_FIGURA)
+
+# Marcar los nodos finales de prefijos válidos de identificador
+_PREFIJOS_ID_LIST = _TIPOS_FIGURA_LIST + ["group"]
+for _pf in _PREFIJOS_ID_LIST:
+    _TRIE_PREFIJO_ID.add(_nombre_nodo(_pf))
+
+
+# ── Completar el trie: para cualquier letra/hex no cubierta en un nodo
+#    del trie, la transición cae a QL_VAR.
+#    También: desde QL_VAR, cualquier letra/hex sigue en QL_VAR.
+
+def _es_letra_o_hex(c: str) -> bool:
+    return c.isalpha() or c in _HEX_CHARS
+
+
+_LETRAS_POSIBLES = (
+    "abcdefghijklmnopqrstuvwxyz"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+)
+
+# Desde Q0: letras no cubiertas por el trie → QL_VAR
+for _ch in _LETRAS_POSIBLES:
+    if (Estado.Q0, _ch) not in _TABLA_TRIE:
+        _TABLA_TRIE[(Estado.Q0, _ch)] = Estado.QL_VAR
+
+# Desde cada nodo del trie: letras no cubiertas → QL_VAR
+for _nodo in list(_ESTADOS_TRIE):
+    for _ch in _LETRAS_POSIBLES:
+        if (_nodo, _ch) not in _TABLA_TRIE:
+            _TABLA_TRIE[(_nodo, _ch)] = Estado.QL_VAR
+
+# Desde QL_VAR: cualquier letra → QL_VAR
+for _ch in _LETRAS_POSIBLES:
+    _TABLA_TRIE[(Estado.QL_VAR, _ch)] = Estado.QL_VAR
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 5 · TABLA DE TRANSICIONES PRINCIPAL
+#     Cubre estados numéricos, hexadecimales y los estados de base.
+#     Se fusiona con _TABLA_TRIE en el bucle del lexer.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Esta tabla usa CC (clase de carácter) para los estados no-trie,
+# igual que la versión anterior.
+_TABLA_CC: Dict[Tuple[object, CC], object] = {
+
+    # ── Q0: estado inicial ────────────────────────────────────────────────────
+    (Estado.Q0, CC.DIGIT):    Estado.QD,
+    (Estado.Q0, CC.HASH):     Estado.QH,
+    (Estado.Q0, CC.QUOTE):    Estado.QS,
+    (Estado.Q0, CC.MINUS):    Estado.QNEG,
+    (Estado.Q0, CC.LPAREN):   Estado.QSYM,
+    (Estado.Q0, CC.RPAREN):   Estado.QSYM,
+    (Estado.Q0, CC.LBRACKET): Estado.QSYM,
+    (Estado.Q0, CC.RBRACKET): Estado.QSYM,
+    (Estado.Q0, CC.COMMA):    Estado.QSYM,
+    (Estado.Q0, CC.UNDER):    Estado.QSYM,
+    (Estado.Q0, CC.SPACE):    Estado.Q0,
+    (Estado.Q0, CC.NEWLINE):  Estado.Q0,
+
+    # ── QNEG ─────────────────────────────────────────────────────────────────
+    (Estado.QNEG, CC.DIGIT): Estado.QD,
+
+    # ── QD: dígitos decimales ─────────────────────────────────────────────────
+    (Estado.QD, CC.DIGIT): Estado.QD,
+
+    # ── QH / QH1: hexadecimal ─────────────────────────────────────────────────
+    (Estado.QH,  CC.DIGIT):     Estado.QH1,
+    (Estado.QH,  CC.HEX_ALPHA): Estado.QH1,
+    (Estado.QH1, CC.DIGIT):     Estado.QH1,
+    (Estado.QH1, CC.HEX_ALPHA): Estado.QH1,
+
+    # ── QID1 – QID4: sufijo numérico ──────────────────────────────────────────
+    (Estado.QID1, CC.DIGIT): Estado.QID2,
+    (Estado.QID2, CC.DIGIT): Estado.QID3,
+    (Estado.QID3, CC.DIGIT): Estado.QID4,
+
+    # ── QL_VAR + dígito: el prefijo es inválido pero el sufijo puede completarse
+    #    para emitir un error L004 más preciso en vez de L001
+    (Estado.QL_VAR, CC.DIGIT): Estado.QID1,
+}
+
+# Estados cuyos delimitadores disparan la emisión del token acumulado
+_ESTADOS_EMIT_ENUM = frozenset({
+    Estado.QL_VAR, Estado.QID4, Estado.QD, Estado.QH1,
+})
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 6 · ERROR LÉXICO
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class ErrorLexico(Exception):
     """
-    Códigos según especificación:
+    Códigos:
         L001  símbolo / carácter inválido
         L002  string sin cerrar
         L003  hexadecimal inválido
@@ -255,16 +312,22 @@ class ErrorLexico(Exception):
 
 class Lexer:
     """
-    Analizador léxico basado en AFD explícito.
+    Analizador léxico basado en AFD 100% por transiciones.
 
-    Bucle principal:
-        1. Estado QS (string): acepta todo ≠ '"' sin consultar tabla.
-        2. Delimitador en estado acumulador: emite token sin consumir carácter.
-        3. EOF: flush del acumulador pendiente.
-        4. Transición normal: consulta _TABLA[(estado_actual, clase_char)].
-           · QSYM  → emite símbolo de un solo carácter.
-           · Q0    → espacio/newline en q0; solo avanza.
-           · demás → acumula carácter en buf y cambia estado.
+    Estrategia de lookup en dos pasos:
+        1. Buscar (estado_actual, carácter_literal) en _TABLA_TRIE.
+           Esto cubre todos los nodos del trie de keywords.
+        2. Si no está, buscar (estado_actual, clase_CC) en _TABLA_CC.
+           Esto cubre estados numéricos, hex y los demás.
+        3. Si tampoco está → QE (error).
+
+    Estados de emisión:
+        · Nodo trie final + delimitador  → emite PALABRA_RESERVADA / TIPO_FIGURA
+        · Nodo trie final de prefijo_id + dígito → QID1 (identificador)
+        · QL_VAR + delimitador           → emite NOMBRE_VAR
+        · QID4 + delimitador             → emite IDENTIFICADOR
+        · QD   + delimitador             → emite NUM_DEC
+        · QH1  + delimitador             → emite NUM_HEX
     """
 
     def __init__(self, texto: str) -> None:
@@ -272,7 +335,7 @@ class Lexer:
         self._pos     = 0
         self._linea   = 1
         self._col     = 1
-        self._estado  = Estado.Q0
+        self._estado: object = Estado.Q0
         self._buf:    List[str] = []
         self._tok_lin = 1
         self._tok_col = 1
@@ -281,14 +344,13 @@ class Lexer:
     # ── API pública ───────────────────────────────────────────────────────────
 
     def tokenizar(self) -> List[Token]:
-        """Ejecuta el AFD y devuelve la lista completa de tokens (incluye EOF)."""
         tokens: List[Token] = []
 
         while True:
             c  = self._peek()
             cc = _cc(c)
 
-            # ── 1. String literal: manejo especial ────────────────────────────
+            # ── 1. String literal ─────────────────────────────────────────────
             if self._estado == Estado.QS:
                 if cc == CC.EOF_CC:
                     self.errores.append(ErrorLexico(
@@ -297,26 +359,43 @@ class Lexer:
                         sugerencia='Cierra el string con comillas dobles. Ej: "rojo"',
                     ))
                     tokens.append(Token(TipoToken.EOF, "", self._linea, self._col))
-                    break  # recuperación: salir del bucle
+                    break
                 self._buf.append(c)       # type: ignore[arg-type]
                 self._avanzar()
-                if cc == CC.QUOTE:        # comilla de cierre → emitir
+                if cc == CC.QUOTE:
                     tokens.append(self._mk_string())
                     self._reset()
                 continue
 
-            # ── 2. Delimitador en estado acumulador → emitir sin consumir ─────
-            if cc in _DELIM and self._estado in _ESTADOS_EMIT:
-                tok = self._emitir_acumulado()
+            # ── 2. Delimitador en nodo trie final → emitir keyword/tipo ───────
+            if cc in _DELIM and isinstance(self._estado, str) and self._estado in _ESTADO_TOKEN:
+                tokens.append(Token(
+                    _ESTADO_TOKEN[self._estado],
+                    "".join(self._buf),
+                    self._tok_lin, self._tok_col,
+                ))
+                self._reset()
+                continue
+
+            # ── 3. Delimitador en estado acumulador enum ──────────────────────
+            if cc in _DELIM and self._estado in _ESTADOS_EMIT_ENUM:
+                tok = self._emitir_acumulado_enum()
                 if tok is not None:
                     tokens.append(tok)
                 self._reset()
-                continue                  # reprocesar el delimitador desde Q0
+                continue
 
-            # ── 3. EOF ─────────────────────────────────────────────────────────
+            # ── 4. EOF ────────────────────────────────────────────────────────
             if cc == CC.EOF_CC:
-                if self._estado in _ESTADOS_EMIT:
-                    tok = self._emitir_acumulado()
+                # Flush de trie final
+                if isinstance(self._estado, str) and self._estado in _ESTADO_TOKEN:
+                    tokens.append(Token(
+                        _ESTADO_TOKEN[self._estado],
+                        "".join(self._buf),
+                        self._tok_lin, self._tok_col,
+                    ))
+                elif self._estado in _ESTADOS_EMIT_ENUM:
+                    tok = self._emitir_acumulado_enum()
                     if tok is not None:
                         tokens.append(tok)
                 elif self._estado not in (Estado.Q0,):
@@ -324,45 +403,72 @@ class Lexer:
                 tokens.append(Token(TipoToken.EOF, "", self._linea, self._col))
                 break
 
-            # ── 4. Transición normal vía tabla ────────────────────────────────
-            sig = _TABLA.get((self._estado, cc), Estado.QE)
+            # ── 5. Dígito desde nodo trie final de prefijo de id → QID1 ──────
+            if (cc == CC.DIGIT
+                    and isinstance(self._estado, str)
+                    and self._estado in _TRIE_PREFIJO_ID):
+                if not self._buf:
+                    self._tok_lin = self._linea
+                    self._tok_col = self._col
+                self._buf.append(c)       # type: ignore[arg-type]
+                self._estado = Estado.QID1
+                self._avanzar()
+                continue
+
+            # ── 6. Dígito desde nodo trie final que NO es prefijo de id ──────
+            if (cc == CC.DIGIT
+                    and isinstance(self._estado, str)
+                    and self._estado in _ESTADO_TOKEN
+                    and self._estado not in _TRIE_PREFIJO_ID):
+                # Tratar la keyword como NOMBRE_VAR y continuar con dígito
+                # (caso raro pero correcto: "set123" → QL_VAR + dígitos)
+                self._estado = Estado.QL_VAR
+                self._buf.append(c)       # type: ignore[arg-type]
+                self._avanzar()
+                continue
+
+            # ── 7. Transición normal: buscar en _TABLA_TRIE primero ──────────
+            sig = _TABLA_TRIE.get((self._estado, c))
+
+            # Si no hay rama literal, buscar por clase CC
+            if sig is None:
+                sig = _TABLA_CC.get((self._estado, cc), Estado.QE)
 
             if sig == Estado.QE:
                 self._error_transicion(c, cc)
+                continue
 
-            elif sig == Estado.QSYM:
+            if sig == Estado.QSYM:
                 tokens.append(Token(
                     _SYM_TOKEN[c],           # type: ignore[index]
                     c,                       # type: ignore[arg-type]
                     self._linea, self._col,
                 ))
                 self._avanzar()
-                # buf sigue vacío; estado permanece Q0 (QSYM no acumula)
+                continue
 
-            elif sig == Estado.Q0:
-                # Espacio / newline desde q0: descartar sin acumular
+            if sig == Estado.Q0:
                 self._avanzar()
+                continue
 
-            else:
-                # Acumular carácter en el lexema actual
-                if not self._buf:
-                    self._tok_lin = self._linea
-                    self._tok_col = self._col
-                self._buf.append(c)          # type: ignore[arg-type]
-                self._estado = sig
-                self._avanzar()
+            # Acumular
+            if not self._buf:
+                self._tok_lin = self._linea
+                self._tok_col = self._col
+            self._buf.append(c)           # type: ignore[arg-type]
+            self._estado = sig
+            self._avanzar()
 
         return tokens
 
-    # ── Emisión de tokens ─────────────────────────────────────────────────────
+    # ── Emisión de tokens acumulados (estados enum) ───────────────────────────
 
-    def _emitir_acumulado(self) -> Optional[Token]:
-        """Selecciona tipo de token según el estado acumulador y emite."""
-        lexema       = "".join(self._buf)
-        lin, col     = self._tok_lin, self._tok_col
+    def _emitir_acumulado_enum(self) -> Optional[Token]:
+        lexema   = "".join(self._buf)
+        lin, col = self._tok_lin, self._tok_col
 
-        if self._estado == Estado.QL:
-            return self._mk_palabra(lexema, lin, col)
+        if self._estado == Estado.QL_VAR:
+            return Token(TipoToken.NOMBRE_VAR, lexema, lin, col)
         if self._estado == Estado.QID4:
             return self._mk_identificador(lexema, lin, col)
         if self._estado == Estado.QD:
@@ -370,28 +476,13 @@ class Lexer:
         if self._estado == Estado.QH1:
             return Token(TipoToken.NUM_HEX, lexema, lin, col)
 
-        raise AssertionError(f"_emitir_acumulado: estado inesperado {self._estado}")
-
-    def _mk_palabra(self, lexema: str, lin: int, col: int) -> Optional[Token]:
-        """
-        Estado qPR / qTF del AFD formal.
-        Consulta los conjuntos de clasificación final SOLO aquí.
-        """
-        if lexema in _RESERVADAS:
-            return Token(TipoToken.PALABRA_RESERVADA, lexema, lin, col)
-        if lexema in _TIPOS_FIGURA:
-            return Token(TipoToken.TIPO_FIGURA, lexema, lin, col)
-        # Nombre de variable: cualquier otra secuencia de letras
-        return Token(TipoToken.NOMBRE_VAR, lexema, lin, col)
+        raise AssertionError(f"_emitir_acumulado_enum: estado inesperado {self._estado}")
 
     def _mk_identificador(self, lexema: str, lin: int, col: int) -> Optional[Token]:
-        """
-        Estado qIDF del AFD formal.
-        Valida que el prefijo de letras sea un tipo de figura válido (L004).
-        """
+        """Valida que el prefijo de letras sea un prefijo de id válido (L004)."""
         split   = next(i for i, ch in enumerate(lexema) if ch.isdigit())
         prefijo = lexema[:split]
-        if prefijo not in _PREFIJOS_VALIDOS:
+        if prefijo not in set(_PREFIJOS_ID_LIST):
             self.errores.append(ErrorLexico(
                 "L004",
                 f"prefijo de identificador inválido: {prefijo!r}",
@@ -407,7 +498,6 @@ class Lexer:
         return Token(TipoToken.IDENTIFICADOR, lexema, lin, col)
 
     def _mk_string(self) -> Token:
-        """Estado qSTR del AFD formal.  El buf ya contiene comillas incluidas."""
         return Token(TipoToken.STRING, "".join(self._buf), self._tok_lin, self._tok_col)
 
     # ── Errores ───────────────────────────────────────────────────────────────
@@ -429,7 +519,6 @@ class Lexer:
                 "L001", f"símbolo inválido: {c!r}", lin, col,
                 sugerencia='Caracteres válidos: letras, dígitos, #, ", (, ), [, ], coma, _',
             ))
-        # Recuperación: descartar el carácter problemático y volver a Q0
         self._avanzar()
         self._reset()
 
@@ -479,43 +568,3 @@ def tokenizar(texto: str) -> Tuple[List[Token], List[ErrorLexico]]:
     tokens = lx.tokenizar()
     return tokens, lx.errores
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 9 · DEMO / PRUEBAS
-# ═══════════════════════════════════════════════════════════════════════════════
-
-if __name__ == "__main__":
-
-    CASOS: List[Tuple[str, str]] = [
-        # ── Válidos ──────────────────────────────────────────────────────────
-        ("create circle",                       "create sin parámetros"),
-        ("create square(\"red\",2,[10,20])",    "create con parámetros"),
-        ("create circle(#1F,10,[0,0])",         "color hexadecimal"),
-        ("update circle0001(_,3,_)",            "update con wildcard"),
-        ("update triangle0045(\"blue\",_,[5,5])","update parcial"),
-        ("delete pentagon9999",                 "delete"),
-        ("hide circle0001",                     "hide"),
-        ("show triangle0045",                   "show"),
-        ("list",                                "list"),
-        ("clear screen",                        "clear screen"),
-        ("help",                                "help"),
-        # ── Errores léxicos ──────────────────────────────────────────────────
-        ("create @circle",                      "L001 símbolo inválido"),
-        ("\"hello",                             "L002 string sin cerrar"),
-        ("#ZZ",                                 "L003 hex inválido (G no es hex)"),
-        ("#",                                   "L003 '#' sin dígitos"),
-        ("circle001",                           "L004 identificador incompleto"),
-        ("blah0001",                            "L004 prefijo inválido"),
-        ("circle00001",                         "L004 identificador con 5 dígitos"),
-    ]
-
-    for texto, etiqueta in CASOS:
-        sep = "─" * 62
-        print(f"\n{sep}")
-        print(f"  [{etiqueta}]  →  {texto!r}")
-        print(sep)
-        try:
-            for tok in tokenizar(texto):
-                print(f"  {tok}")
-        except ErrorLexico as e:
-            print(f"  ✗  {e}")

@@ -1,8 +1,3 @@
-"""
-tabla_simbolos.py — Tabla de Símbolos · Lenguaje de Figuras Geométricas
-
-Almacena el estado actual de todas las figuras creadas.
-"""
 
 from __future__ import annotations
 
